@@ -1,0 +1,252 @@
+---
+title: Aliases
+description: AliasConfig type reference for creating collection aliases
+---
+
+## AliasConfig
+
+Aliases provide virtual names for collections, enabling zero-downtime migrations and stable API endpoints.
+
+### Properties
+
+<ParamField path="name" type="string" required>
+  Unique name for the alias.
+
+  ```typescript
+  name: "products_live"
+  ```
+
+  The alias can be used in search queries just like a collection name.
+</ParamField>
+
+<ParamField path="collection" type="string" required>
+  Name of the target collection.
+
+  ```typescript
+  collection: "products"
+  ```
+
+  The collection must exist or be defined in the same configuration.
+</ParamField>
+
+## Examples
+
+### Basic Alias
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "products",
+      fields: [
+        { name: "name", type: "string" },
+        { name: "price", type: "float" },
+      ],
+    },
+  ],
+  aliases: [
+    {
+      name: "products_live",
+      collection: "products",
+    },
+  ],
+});
+```
+
+### Multiple Aliases
+
+Point multiple aliases to the same collection:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "products_v2",
+      fields: [...],
+    },
+  ],
+  aliases: [
+    {
+      name: "products",
+      collection: "products_v2",
+    },
+    {
+      name: "products_live",
+      collection: "products_v2",
+    },
+    {
+      name: "products_stable",
+      collection: "products_v2",
+    },
+  ],
+});
+```
+
+### Environment-Specific Aliases
+
+Use aliases to maintain stable endpoints across environments:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+const isProd = process.env.NODE_ENV === "production";
+
+export default defineConfig({
+  collections: [
+    {
+      name: isProd ? "products_prod" : "products_dev",
+      fields: [...],
+    },
+  ],
+  aliases: [
+    {
+      name: "products",
+      collection: isProd ? "products_prod" : "products_dev",
+    },
+  ],
+});
+```
+
+## Use Cases
+
+### 1. Zero-Downtime Migrations
+
+Aliases enable blue/green deployments for schema changes:
+
+```typescript
+// Step 1: Initial setup
+{
+  collections: [{ name: "products_v1", fields: [...] }],
+  aliases: [{ name: "products", collection: "products_v1" }],
+}
+
+// Step 2: Create new version
+{
+  collections: [
+    { name: "products_v1", fields: [...] },
+    { name: "products_v2", fields: [...] }, // New schema
+  ],
+  aliases: [{ name: "products", collection: "products_v1" }],
+}
+
+// Step 3: Switch alias (instant cutover)
+{
+  collections: [
+    { name: "products_v1", fields: [...] },
+    { name: "products_v2", fields: [...] },
+  ],
+  aliases: [{ name: "products", collection: "products_v2" }],
+}
+
+// Step 4: Remove old version
+{
+  collections: [{ name: "products_v2", fields: [...] }],
+  aliases: [{ name: "products", collection: "products_v2" }],
+}
+```
+
+### 2. Stable API Endpoints
+
+Maintain consistent API endpoints while versioning collections:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    { name: "products_20240315", fields: [...] },
+  ],
+  aliases: [
+    {
+      name: "products",
+      collection: "products_20240315",
+    },
+  ],
+});
+```
+
+Your application always queries `products`, while the underlying collection can be versioned.
+
+### 3. A/B Testing
+
+Test new schemas with a subset of users:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    { name: "products_current", fields: [...] },
+    { name: "products_experimental", fields: [...] },
+  ],
+  aliases: [
+    {
+      name: "products_default",
+      collection: "products_current",
+    },
+    {
+      name: "products_beta",
+      collection: "products_experimental",
+    },
+  ],
+});
+```
+
+### 4. Rollback Safety
+
+Keep previous versions for quick rollback:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    { name: "products_v1", fields: [...] },  // Keep for rollback
+    { name: "products_v2", fields: [...] },  // Current version
+  ],
+  aliases: [
+    {
+      name: "products",
+      collection: "products_v2",
+    },
+    {
+      name: "products_previous",
+      collection: "products_v1",  // Quick rollback target
+    },
+  ],
+});
+```
+
+## Usage with tsctl migrate
+
+The `tsctl migrate` command automates blue/green migrations using aliases:
+
+```bash
+# Full migration
+tsctl migrate -a products_live -c tsctl.config.ts
+
+# Step-by-step migration
+tsctl migrate -a products_live -c tsctl.config.ts --create-only
+# ... index data ...
+tsctl migrate -a products_live -c tsctl.config.ts --switch-only
+```
+
+See [Blue/Green Migrations](/advanced/blue-green-migrations) for details.
+
+## Best Practices
+
+1. **Always use aliases in production**: Never reference collections directly in application code
+2. **Version your collections**: Use timestamps or version numbers in collection names
+3. **Keep previous versions**: Retain at least one previous version for quick rollback
+4. **Test before switching**: Validate the new collection before updating the alias
+5. **Document alias purpose**: Use descriptive names (`products_live`, `products_staging`)
+
+## Related
+
+- [Collections Reference](/config/collections)
+- [Blue/Green Migrations](/advanced/blue-green-migrations)
+- [Multi-Environment Setup](/advanced/multi-environment)

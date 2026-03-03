@@ -1,0 +1,480 @@
+---
+title: Overrides
+description: OverrideConfig type reference for search result curation and query manipulation
+---
+
+## OverrideConfig
+
+Overrides (also called curations) allow you to customize search results for specific queries. You can promote, hide, or reorder results, apply filters, or modify the query itself.
+
+### Properties
+
+<ParamField path="id" type="string" required>
+  Unique identifier for the override.
+
+  ```typescript
+  id: "featured-products"
+  ```
+</ParamField>
+
+<ParamField path="collection" type="string" required>
+  Name of the collection this override applies to.
+
+  ```typescript
+  collection: "products"
+  ```
+</ParamField>
+
+<ParamField path="rule" type="OverrideRule" required>
+  Matching rule that determines when this override applies.
+
+  ```typescript
+  rule: {
+    query: "laptop",
+    match: "exact",
+  }
+  ```
+
+  See [Override Rules](#override-rules) below.
+</ParamField>
+
+<ParamField path="includes" type="object[]" optional>
+  Documents to promote to specific positions.
+
+  ```typescript
+  includes: [
+    { id: "product-123", position: 1 },
+    { id: "product-456", position: 2 },
+  ]
+  ```
+
+  Each object must have:
+  - `id` (string): Document ID
+  - `position` (number): Position in results (1-based)
+</ParamField>
+
+<ParamField path="excludes" type="object[]" optional>
+  Documents to hide from results.
+
+  ```typescript
+  excludes: [
+    { id: "product-789" },
+    { id: "product-012" },
+  ]
+  ```
+
+  Each object must have:
+  - `id` (string): Document ID to exclude
+</ParamField>
+
+<ParamField path="filter_by" type="string" optional>
+  Additional filter to apply to the query.
+
+  ```typescript
+  filter_by: "category:=electronics && in_stock:=true"
+  ```
+
+  Uses Typesense filter syntax.
+</ParamField>
+
+<ParamField path="sort_by" type="string" optional>
+  Custom sorting to apply.
+
+  ```typescript
+  sort_by: "popularity:desc,price:asc"
+  ```
+</ParamField>
+
+<ParamField path="replace_query" type="string" optional>
+  Replace the search query with a different one.
+
+  ```typescript
+  replace_query: "premium laptops"
+  ```
+
+  The original query is replaced before search.
+</ParamField>
+
+<ParamField path="remove_matched_tokens" type="boolean" optional default="false">
+  Remove matched query tokens before searching.
+
+  ```typescript
+  remove_matched_tokens: true
+  ```
+
+  Useful for removing brand names or categories from the query.
+</ParamField>
+
+<ParamField path="filter_curated_hits" type="boolean" optional default="false">
+  Apply `filter_by` to curated hits (includes/excludes).
+
+  ```typescript
+  filter_curated_hits: true
+  ```
+</ParamField>
+
+<ParamField path="effective_from_ts" type="number" optional>
+  Unix timestamp when this override becomes active.
+
+  ```typescript
+  effective_from_ts: 1704067200  // 2024-01-01 00:00:00 UTC
+  ```
+</ParamField>
+
+<ParamField path="effective_to_ts" type="number" optional>
+  Unix timestamp when this override expires.
+
+  ```typescript
+  effective_to_ts: 1735689600  // 2025-01-01 00:00:00 UTC
+  ```
+</ParamField>
+
+<ParamField path="stop_processing" type="boolean" optional default="true">
+  Stop processing other overrides if this one matches.
+
+  ```typescript
+  stop_processing: false  // Continue to next override
+  ```
+</ParamField>
+
+## Override Rules
+
+### OverrideRule Properties
+
+<ParamField path="query" type="string" optional>
+  Query text to match.
+
+  ```typescript
+  query: "laptop"
+  ```
+</ParamField>
+
+<ParamField path="match" type="'exact' | 'contains'" optional default="exact">
+  How to match the query.
+
+  ```typescript
+  match: "contains"  // Match queries containing "laptop"
+  ```
+
+  - `exact`: Query must exactly match
+  - `contains`: Query must contain the text
+</ParamField>
+
+<ParamField path="filter_by" type="string" optional>
+  Match based on filter conditions instead of query.
+
+  ```typescript
+  filter_by: "category:=laptops"
+  ```
+</ParamField>
+
+<ParamField path="tags" type="string[]" optional>
+  Match when specific tags are present in the query.
+
+  ```typescript
+  tags: ["promotion", "featured"]
+  ```
+</ParamField>
+
+## Examples
+
+### Pin Featured Products
+
+Promote specific products to the top of search results:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  overrides: [
+    {
+      id: "featured-laptops",
+      collection: "products",
+      rule: {
+        query: "laptop",
+        match: "exact",
+      },
+      includes: [
+        { id: "laptop-premium-001", position: 1 },
+        { id: "laptop-budget-042", position: 2 },
+      ],
+    },
+  ],
+});
+```
+
+### Hide Out-of-Stock Products
+
+Exclude specific products from search results:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  overrides: [
+    {
+      id: "hide-discontinued",
+      collection: "products",
+      rule: {
+        query: "*",  // Apply to all queries
+        match: "contains",
+      },
+      excludes: [
+        { id: "product-discontinued-1" },
+        { id: "product-discontinued-2" },
+      ],
+    },
+  ],
+});
+```
+
+### Apply Category Filter
+
+Automatically filter results by category:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  overrides: [
+    {
+      id: "shoe-category-filter",
+      collection: "products",
+      rule: {
+        query: "shoes",
+        match: "contains",
+      },
+      filter_by: "category:=footwear",
+      remove_matched_tokens: true,
+    },
+  ],
+});
+```
+
+### Custom Sorting
+
+Apply custom sort order for specific queries:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  overrides: [
+    {
+      id: "popular-first",
+      collection: "products",
+      rule: {
+        query: "trending",
+        match: "exact",
+      },
+      sort_by: "popularity:desc,created_at:desc",
+    },
+  ],
+});
+```
+
+### Seasonal Promotions
+
+Time-limited overrides for sales events:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  overrides: [
+    {
+      id: "black-friday-2024",
+      collection: "products",
+      rule: {
+        query: "deals",
+        match: "contains",
+      },
+      includes: [
+        { id: "bf-deal-001", position: 1 },
+        { id: "bf-deal-002", position: 2 },
+      ],
+      filter_by: "on_sale:=true",
+      effective_from_ts: 1700784000,  // Nov 24, 2024
+      effective_to_ts: 1701043200,    // Nov 27, 2024
+    },
+  ],
+});
+```
+
+### Query Replacement
+
+Replace common misspellings or aliases:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  overrides: [
+    {
+      id: "fix-typo-iphone",
+      collection: "products",
+      rule: {
+        query: "iphone",
+        match: "exact",
+      },
+      replace_query: "iPhone",
+    },
+  ],
+});
+```
+
+### Tag-Based Overrides
+
+Trigger overrides based on tags:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  overrides: [
+    {
+      id: "premium-badge",
+      collection: "products",
+      rule: {
+        tags: ["premium"],
+      },
+      filter_by: "tier:=premium",
+      sort_by: "quality_score:desc",
+    },
+  ],
+});
+```
+
+### Multiple Overrides (Priority Order)
+
+Overrides are processed in order. Use `stop_processing` to control chaining:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  overrides: [
+    {
+      id: "exact-match-first",
+      collection: "products",
+      rule: {
+        query: "macbook pro",
+        match: "exact",
+      },
+      includes: [
+        { id: "macbook-pro-latest", position: 1 },
+      ],
+      stop_processing: true,  // Don't apply other overrides
+    },
+    {
+      id: "general-laptops",
+      collection: "products",
+      rule: {
+        query: "laptop",
+        match: "contains",
+      },
+      filter_by: "category:=laptops",
+      stop_processing: false,  // Allow chaining
+    },
+  ],
+});
+```
+
+## Use Cases
+
+### 1. Merchandising
+
+Promote products based on business rules:
+- Featured products
+- Sponsored results
+- New arrivals
+- Clearance items
+
+### 2. Query Refinement
+
+Improve search quality:
+- Fix common misspellings
+- Handle abbreviations
+- Expand brand names
+- Remove stop words
+
+### 3. Personalization
+
+Customize results based on context:
+- User preferences
+- Geographic location
+- Device type
+- Time of day
+
+### 4. A/B Testing
+
+Test different result orderings:
+- Compare curation strategies
+- Measure conversion impact
+- Optimize for engagement
+
+## Best Practices
+
+### 1. Use Specific Rules
+
+**Good:**
+```typescript
+rule: {
+  query: "macbook pro 16",
+  match: "exact",
+}
+```
+
+**Avoid:**
+```typescript
+rule: {
+  query: "*",
+  match: "contains",
+}
+```
+
+### 2. Set Expiration Dates
+
+Always set `effective_to_ts` for time-sensitive overrides:
+
+```typescript
+{
+  id: "summer-sale-2024",
+  effective_from_ts: 1717200000,
+  effective_to_ts: 1725148800,
+  ...
+}
+```
+
+### 3. Document Business Logic
+
+Use descriptive IDs and comments:
+
+```typescript
+{
+  // Promote eco-friendly products for sustainability queries
+  id: "sustainability-boost-eco-products",
+  ...
+}
+```
+
+### 4. Test Before Deploying
+
+Use `tsctl plan` to preview changes:
+
+```bash
+tsctl plan
+```
+
+### 5. Monitor Performance
+
+Track override effectiveness:
+- Click-through rates
+- Conversion rates
+- User engagement
+
+## Related
+
+- [Collections Reference](/config/collections)
+- [Analytics Rules](/config/analytics-rules)
+- [Search Optimization Guide](/config/synonyms)

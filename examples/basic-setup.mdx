@@ -1,0 +1,170 @@
+---
+title: 'Basic Setup'
+description: 'Simple products collection with fields, alias, and basic configuration'
+icon: 'rocket'
+---
+
+## Overview
+
+This example demonstrates a basic tsctl setup with a simple products collection, including:
+- Basic field types (string, float, arrays)
+- Faceting for categories and tags
+- Default sorting
+- Collection alias for production use
+
+## Configuration
+
+Create a `tsctl.config.ts` file:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "products",
+      fields: [
+        { name: "name", type: "string" },
+        { name: "description", type: "string", optional: true },
+        { name: "price", type: "float" },
+        { name: "category", type: "string", facet: true },
+        { name: "tags", type: "string[]", facet: true, optional: true },
+      ],
+      default_sorting_field: "price",
+    },
+  ],
+  aliases: [
+    {
+      name: "products_live",
+      collection: "products",
+    },
+  ],
+});
+```
+
+## Field Explanations
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `string` | Product name (required, searchable) |
+| `description` | `string` | Product description (optional) |
+| `price` | `float` | Product price (used for sorting) |
+| `category` | `string` | Product category (faceted for filtering) |
+| `tags` | `string[]` | Product tags (faceted array, optional) |
+
+## Key Configuration Options
+
+### default_sorting_field
+
+Specifies which field to use for default sorting. The field must be a numeric type (`int32`, `int64`, or `float`).
+
+```typescript
+default_sorting_field: "price"
+```
+
+### facet: true
+
+Enables faceting on a field, allowing you to get counts of unique values and filter results:
+
+```typescript
+{ name: "category", type: "string", facet: true }
+```
+
+### optional: true
+
+Allows documents to omit this field:
+
+```typescript
+{ name: "tags", type: "string[]", optional: true }
+```
+
+## Aliases
+
+Aliases provide a stable reference to your collection, useful for:
+- Blue/green deployments
+- Version management
+- Client code that shouldn't reference specific collection versions
+
+```typescript
+aliases: [
+  {
+    name: "products_live",
+    collection: "products",
+  },
+]
+```
+
+## Deployment
+
+### 1. Plan Changes
+
+See what will be created:
+
+```bash
+tsctl plan
+```
+
+Output:
+```
+Typesense Plan:
+
+  + collection.products (create)
+      + name: "products"
+      + fields: [...]
+      + default_sorting_field: "price"
+
+  + alias.products_live (create)
+      + name: "products_live"
+      + collection: "products"
+
+Summary:
+  2 to create, 0 to update, 0 to delete, 0 unchanged
+```
+
+### 2. Apply Changes
+
+Create the resources:
+
+```bash
+tsctl apply
+```
+
+### 3. Verify
+
+Check managed resources:
+
+```bash
+tsctl state list
+```
+
+## Usage Example
+
+Once deployed, you can index documents:
+
+```bash
+curl "http://localhost:8108/collections/products_live/documents" \
+  -X POST \
+  -H "X-TYPESENSE-API-KEY: ${TYPESENSE_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Laptop",
+    "description": "High-performance laptop",
+    "price": 999.99,
+    "category": "Electronics",
+    "tags": ["computers", "work", "portable"]
+  }'
+```
+
+Search with faceting:
+
+```bash
+curl "http://localhost:8108/collections/products_live/documents/search?q=laptop&query_by=name,description&facet_by=category,tags" \
+  -H "X-TYPESENSE-API-KEY: ${TYPESENSE_API_KEY}"
+```
+
+## Next Steps
+
+- Add [synonyms](/config/synonyms) for better search results
+- Configure [overrides](/config/overrides) to pin featured products
+- Set up [multi-environment](/advanced/multi-environment) deployments
+- Explore [vector search](/examples/vector-search) for semantic search

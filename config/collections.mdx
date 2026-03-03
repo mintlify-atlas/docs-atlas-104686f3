@@ -1,0 +1,177 @@
+---
+title: Collections
+description: CollectionConfig type reference with all properties for defining Typesense collections
+---
+
+## CollectionConfig
+
+Defines a Typesense collection schema with fields and configuration options.
+
+### Properties
+
+<ParamField path="name" type="string" required>
+  Unique name for the collection.
+
+  ```typescript
+  name: "products"
+  ```
+</ParamField>
+
+<ParamField path="fields" type="Field[]" required>
+  Array of field definitions. See [Fields](/config/fields) for detailed field configuration.
+
+  ```typescript
+  fields: [
+    { name: "title", type: "string" },
+    { name: "price", type: "float" },
+    { name: "tags", type: "string[]", facet: true },
+  ]
+  ```
+</ParamField>
+
+<ParamField path="default_sorting_field" type="string" optional>
+  Field to use for default sorting. Must be a numeric field (`int32`, `int64`, or `float`).
+
+  ```typescript
+  default_sorting_field: "created_at"
+  ```
+</ParamField>
+
+<ParamField path="token_separators" type="string[]" optional>
+  Custom characters to use as token separators in addition to spaces and punctuation.
+
+  ```typescript
+  token_separators: ["-", "/", "_"]
+  ```
+
+  Example: With `["-"]`, "high-quality" becomes two tokens: "high" and "quality".
+</ParamField>
+
+<ParamField path="symbols_to_index" type="string[]" optional>
+  Special symbols to index as part of tokens instead of treating as separators.
+
+  ```typescript
+  symbols_to_index: ["#", "@", "+"]
+  ```
+
+  Example: With `["#"]`, "#python" is indexed as a single token.
+</ParamField>
+
+<ParamField path="enable_nested_fields" type="boolean" optional default="false">
+  Enable automatic indexing of nested object fields.
+
+  ```typescript
+  enable_nested_fields: true
+  ```
+
+  When enabled, nested object properties are automatically indexed with dot notation (e.g., `address.city`).
+</ParamField>
+
+<ParamField path="synonym_sets" type="string[]" optional>
+  **Typesense 30.0+**: Array of global synonym set names to apply to this collection.
+
+  ```typescript
+  synonym_sets: ["common-synonyms", "product-synonyms"]
+  ```
+
+  Synonym sets must be defined in the `synonymSets` configuration. See [Synonyms](/config/synonyms) for details.
+</ParamField>
+
+## Example: Basic Collection
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "products",
+      fields: [
+        { name: "name", type: "string" },
+        { name: "description", type: "string", optional: true },
+        { name: "price", type: "float" },
+        { name: "category", type: "string", facet: true },
+        { name: "tags", type: "string[]", facet: true, optional: true },
+      ],
+      default_sorting_field: "price",
+    },
+  ],
+});
+```
+
+## Example: Advanced Collection
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "articles",
+      fields: [
+        { name: "title", type: "string", infix: true },
+        { name: "content", type: "string", stem: true, locale: "en" },
+        { name: "author", type: "string", facet: true },
+        { name: "published_at", type: "int64", sort: true },
+        { name: "tags", type: "string[]", facet: true },
+        { name: "hashtags", type: "string[]" },
+        { name: "metadata", type: "object", optional: true },
+      ],
+      default_sorting_field: "published_at",
+      token_separators: ["-", "/"],
+      symbols_to_index: ["#", "@"],
+      enable_nested_fields: true,
+      synonym_sets: ["general-synonyms"],
+    },
+  ],
+});
+```
+
+## Example: Vector Search Collection
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "documents",
+      fields: [
+        { name: "title", type: "string" },
+        { name: "content", type: "string" },
+        {
+          name: "embedding",
+          type: "float[]",
+          num_dim: 384,
+          vec_dist: "cosine",
+          embed: {
+            from: ["title", "content"],
+            model_config: {
+              model_name: "ts/all-MiniLM-L12-v2",
+            },
+          },
+        },
+      ],
+    },
+  ],
+});
+```
+
+## Schema Updates
+
+When you modify a collection's schema:
+
+1. **Adding optional fields**: Safe, can be applied directly
+2. **Adding required fields**: Requires data backfill
+3. **Removing fields**: Safe, data is preserved but not indexed
+4. **Changing field types**: Requires recreation (use [blue/green migration](/advanced/blue-green-migrations))
+
+<Warning>
+  Changing field types or making fields required on existing collections requires recreating the collection. Use the `tsctl migrate` command for zero-downtime migrations.
+</Warning>
+
+## Related
+
+- [Fields Reference](/config/fields) - Detailed field type documentation
+- [Synonyms](/config/synonyms) - Configure synonym sets
+- [Blue/Green Migrations](/advanced/blue-green-migrations) - Zero-downtime schema updates

@@ -1,80 +1,266 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get up and running with tsctl in minutes
 ---
 
-## Get started in three steps
-
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+Get started with tsctl and deploy your first Typesense schema in 5 simple steps.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+**Prerequisites**: You'll need:
+- Node.js 16+ or Bun installed
+- A running Typesense instance (local or cloud)
+- Your Typesense API key
 </Note>
+
+## Quick start
+
+<Steps>
+  <Step title="Install tsctl">
+    Install tsctl globally or use it with npx:
+
+    <CodeGroup>
+    ```bash npm
+    npm install -g tsctl
+    ```
+
+    ```bash pnpm
+    pnpm add -g tsctl
+    ```
+
+    ```bash yarn
+    yarn global add tsctl
+    ```
+
+    ```bash bun
+    bun add -g tsctl
+    ```
+
+    ```bash npx
+    # No installation needed - run directly
+    npx tsctl --help
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Initialize your project">
+    Create a new tsctl project:
+
+    ```bash
+    tsctl init
+    ```
+
+    This creates two files:
+    - `tsctl.config.ts` - Your infrastructure definition
+    - `.env` - Connection settings
+  </Step>
+
+  <Step title="Configure connection">
+    Edit the generated `.env` file with your Typesense connection details:
+
+    <CodeGroup>
+    ```bash Local Development
+    TYPESENSE_HOST=localhost
+    TYPESENSE_PORT=8108
+    TYPESENSE_PROTOCOL=http
+    TYPESENSE_API_KEY=your-dev-api-key
+    ```
+
+    ```bash Typesense Cloud
+    TYPESENSE_HOST=xxx.a1.typesense.net
+    TYPESENSE_PORT=443
+    TYPESENSE_PROTOCOL=https
+    TYPESENSE_API_KEY=your-api-key
+    ```
+
+    ```bash Self-Hosted
+    TYPESENSE_HOST=typesense.example.com
+    TYPESENSE_PORT=443
+    TYPESENSE_PROTOCOL=https
+    TYPESENSE_API_KEY=your-api-key
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Define your schema">
+    Edit `tsctl.config.ts` to define your collections and schema:
+
+    ```typescript tsctl.config.ts
+    import { defineConfig } from "tsctl";
+
+    export default defineConfig({
+      collections: [
+        {
+          name: "products",
+          fields: [
+            { name: "name", type: "string" },
+            { name: "description", type: "string", optional: true },
+            { name: "price", type: "float" },
+            { name: "category", type: "string", facet: true },
+            { name: "tags", type: "string[]", facet: true, optional: true },
+            { name: "in_stock", type: "bool" },
+            { name: "created_at", type: "int64" },
+          ],
+          default_sorting_field: "created_at",
+        },
+      ],
+      aliases: [
+        {
+          name: "products_live",
+          collection: "products",
+        },
+      ],
+    });
+    ```
+
+    This configuration defines:
+    - A `products` collection with 7 fields
+    - Faceting enabled for categories and tags
+    - An alias for stable endpoint naming
+  </Step>
+
+  <Step title="Plan and apply">
+    Preview what will be created:
+
+    ```bash
+    tsctl plan
+    ```
+
+    You'll see output like:
+
+    ```
+    Typesense Plan:
+
+      + collection.products (create)
+          + name: "products"
+          + fields: [7 fields]
+          + default_sorting_field: "created_at"
+
+      + alias.products_live (create)
+          + name: "products_live"
+          + collection: "products"
+
+    Summary:
+      2 to create, 0 to update, 0 to delete, 0 unchanged
+    ```
+
+    Apply the changes:
+
+    ```bash
+    tsctl apply
+    ```
+
+    Confirm when prompted, and tsctl will create your collection and alias!
+  </Step>
+</Steps>
+
+## What's next?
+
+<CardGroup cols={2}>
+  <Card title="Configuration reference" icon="gear" href="/config/overview">
+    Learn about all configuration options
+  </Card>
+  <Card title="Core concepts" icon="book-open" href="/concepts/configuration">
+    Understand how tsctl works
+  </Card>
+  <Card title="Commands" icon="terminal" href="/commands/init">
+    Explore all CLI commands
+  </Card>
+  <Card title="Examples" icon="code" href="/examples/basic-setup">
+    See real-world examples
+  </Card>
+</CardGroup>
+
+## Common next steps
+
+### Import existing resources
+
+If you already have collections in Typesense:
+
+```bash
+tsctl import
+```
+
+This will generate a config file from your existing resources.
+
+### Add more resources
+
+Expand your config with [synonyms](/config/synonyms), [overrides](/config/overrides), and [API keys](/config/api-keys):
+
+```typescript
+export default defineConfig({
+  collections: [/* ... */],
+  
+  synonyms: [
+    {
+      id: "product-synonyms",
+      collection: "products",
+      synonyms: ["phone", "mobile", "smartphone"],
+    },
+  ],
+  
+  overrides: [
+    {
+      id: "featured-products",
+      collection: "products",
+      rule: { query: "featured", match: "exact" },
+      includes: [
+        { id: "product-123", position: 1 },
+      ],
+    },
+  ],
+});
+```
+
+### Set up environments
+
+Manage multiple environments (dev, staging, production):
+
+```bash
+tsctl init --with-environments
+```
+
+Then deploy to specific environments:
+
+```bash
+tsctl plan --env production
+tsctl apply --env production
+```
+
+Learn more in the [Multi-Environment guide](/advanced/multi-environment).
+
+## Troubleshooting
+
+<Accordion title="Connection errors">
+- Verify your `TYPESENSE_HOST`, `TYPESENSE_PORT`, and `TYPESENSE_PROTOCOL` are correct
+- Check that your `TYPESENSE_API_KEY` has admin permissions
+- Test connection: `curl http://localhost:8108/health` (adjust URL for your setup)
+- Run `tsctl env show` to see current configuration
+</Accordion>
+
+<Accordion title="Validation errors">
+- Run `tsctl validate` to see detailed error messages
+- Ensure all required fields are present in your config
+- Check field types match Typesense's supported types
+- Verify collection and field names follow naming rules (alphanumeric + underscores)
+</Accordion>
+
+<Accordion title="Apply failures">
+- Check Typesense server logs for detailed error messages
+- Ensure you have sufficient permissions with your API key
+- Verify your Typesense version supports the features you're using
+- Try running `tsctl plan` first to catch issues early
+</Accordion>
+
+## Key commands
+
+| Command | Description |
+| --- | --- |
+| `tsctl init` | Initialize a new project |
+| `tsctl validate` | Validate your configuration |
+| `tsctl plan` | Preview changes before applying |
+| `tsctl apply` | Apply changes to Typesense |
+| `tsctl import` | Import existing resources |
+| `tsctl drift` | Detect manual changes |
+| `tsctl state list` | List managed resources |
+
+For a complete command reference, see the [Commands documentation](/commands/init).

@@ -1,0 +1,337 @@
+---
+title: "tsctl state"
+description: "Manage tsctl state including listing, showing, and clearing tracked resources"
+---
+
+## Overview
+
+The `state` command provides subcommands for managing tsctl's state file. State tracks which resources are managed by tsctl and their last known configuration.
+
+## Subcommands
+
+- [`list`](#list) - List all managed resources
+- [`show`](#show) - Show full state as JSON
+- [`clear`](#clear) - Clear state without deleting resources
+
+## Global Options
+
+All state subcommands support:
+
+<ParamField path="--env" type="string">
+  Environment to use (loads `.env.<environment>`). Determines which state to access.
+</ParamField>
+
+---
+
+## list
+
+List all resources currently tracked in tsctl state.
+
+### Syntax
+
+```bash
+tsctl state list
+```
+
+### Examples
+
+#### List managed resources
+
+```bash
+tsctl state list
+```
+
+**Output:**
+```
+Managed resources:
+
+  collection.products
+    Checksum: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+    Updated: 2026-03-03T10:15:30.000Z
+
+  collection.users
+    Checksum: 4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce
+    Updated: 2026-03-03T10:15:31.000Z
+
+  alias.products_live
+    Checksum: 7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730
+    Updated: 2026-03-03T10:15:32.000Z
+
+  synonym.product_terms (products)
+    Checksum: a3c5f4e8b2d1c9e7f6a8b4d2c1e9f7a6b3d5c2e8f1a4b7d9c6e3f2a5b8d1c4e7
+    Updated: 2026-03-03T10:15:33.000Z
+```
+
+#### No resources in state
+
+```bash
+tsctl state list
+```
+
+**Output:**
+```
+No resources in state.
+```
+
+### Use Cases
+
+- **Verify managed resources** - Check which resources tsctl is tracking
+- **Debug state issues** - See what's in state vs. what you expect
+- **Audit management** - Confirm resources are under tsctl control
+
+---
+
+## show
+
+Show the complete state file as JSON, including all resource configurations and metadata.
+
+### Syntax
+
+```bash
+tsctl state show
+```
+
+### Examples
+
+#### Show full state
+
+```bash
+tsctl state show
+```
+
+**Output:**
+```json
+{
+  "version": "1.0",
+  "resources": [
+    {
+      "identifier": {
+        "type": "collection",
+        "name": "products"
+      },
+      "checksum": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "lastUpdated": "2026-03-03T10:15:30.000Z",
+      "config": {
+        "name": "products",
+        "fields": [
+          { "name": "id", "type": "string" },
+          { "name": "name", "type": "string" },
+          { "name": "price", "type": "float" }
+        ],
+        "default_sorting_field": "created_at"
+      }
+    },
+    {
+      "identifier": {
+        "type": "alias",
+        "name": "products_live"
+      },
+      "checksum": "7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730",
+      "lastUpdated": "2026-03-03T10:15:32.000Z",
+      "config": {
+        "name": "products_live",
+        "collection": "products"
+      }
+    }
+  ]
+}
+```
+
+#### Pipe to file for analysis
+
+```bash
+tsctl state show > state-backup.json
+```
+
+#### Parse with jq
+
+```bash
+tsctl state show | jq '.resources[] | select(.identifier.type == "collection") | .identifier.name'
+```
+
+**Output:**
+```
+"products"
+"users"
+```
+
+### Use Cases
+
+- **Backup state** - Save state before major operations
+- **Debugging** - Inspect checksums and configurations
+- **Scripting** - Parse state in custom tools
+- **Audit trails** - Track state history over time
+
+---
+
+## clear
+
+Clear the state file without deleting any resources in Typesense. This "orphans" all managed resources.
+
+<Warning>
+  This operation removes tsctl's tracking of resources but **does not delete the resources themselves**. Use with caution.
+</Warning>
+
+### Syntax
+
+```bash
+tsctl state clear [options]
+```
+
+### Options
+
+<ParamField path="--yes" type="boolean" default="false">
+  Auto-approve clearing state without prompting for confirmation.
+</ParamField>
+
+<ParamField path="-y" type="boolean" default="false">
+  Short alias for `--yes`.
+</ParamField>
+
+### Examples
+
+#### Interactive clear
+
+```bash
+tsctl state clear
+```
+
+**Output:**
+```
+Clear state? Resources will NOT be deleted. (yes/no): yes
+
+✓ State cleared.
+```
+
+#### Auto-approve clear
+
+```bash
+tsctl state clear --yes
+```
+
+**Output:**
+```
+✓ State cleared.
+```
+
+#### Cancel clear
+
+```bash
+tsctl state clear
+```
+
+**Output:**
+```
+Clear state? Resources will NOT be deleted. (yes/no): no
+
+Cancelled.
+```
+
+### Use Cases
+
+<AccordionGroup>
+  <Accordion title="Start fresh with import">
+    Clear state and re-import to rebuild tracking:
+    
+    ```bash
+    tsctl state clear --yes
+    tsctl import
+    # State is now rebuilt from live resources
+    ```
+  </Accordion>
+
+  <Accordion title="Fix state corruption">
+    If state becomes corrupted, clear and reimport:
+    
+    ```bash
+    # Backup current state
+    tsctl state show > state-backup.json
+    
+    # Clear and rebuild
+    tsctl state clear --yes
+    tsctl import
+    ```
+  </Accordion>
+
+  <Accordion title="Transfer management">
+    Stop managing resources with tsctl:
+    
+    ```bash
+    tsctl state clear --yes
+    # Resources remain but are no longer tracked
+    # Manage them manually or with other tools
+    ```
+  </Accordion>
+
+  <Accordion title="Environment reset">
+    Clear state for a test environment:
+    
+    ```bash
+    tsctl state clear --env test --yes
+    # Resources still exist
+    # Run tsctl destroy to delete them
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### What Happens After Clear
+
+After clearing state:
+
+1. **Resources remain in Typesense** - Collections, aliases, etc. are not deleted
+2. **tsctl forgets management** - Resources are now "unmanaged"
+3. **Operations behave differently:**
+   - `tsctl plan` will show all resources as "to create" (they exist but aren't tracked)
+   - `tsctl apply` will attempt to create resources (will fail if they exist)
+   - `tsctl drift` will show no resources in state
+   - `tsctl destroy` will do nothing (no resources tracked)
+
+### Recovery After Accidental Clear
+
+```bash
+# If you accidentally clear state, immediately run:
+tsctl import
+
+# This rebuilds state from existing resources
+# Then verify:
+tsctl state list
+```
+
+## State Storage
+
+tsctl stores state in Typesense itself:
+
+- **Collection:** `tsctl_state`
+- **Document ID:** `current`
+- **Format:** JSON with version, resources, checksums
+
+### Manual State Access
+
+You can access state directly via Typesense API:
+
+```bash
+# Read state
+curl "http://localhost:8108/collections/tsctl_state/documents/current"
+
+# Delete state (same as state clear)
+curl -X DELETE "http://localhost:8108/collections/tsctl_state/documents/current"
+```
+
+## State vs Destroy
+
+| Command | Resources | State |
+|---------|-----------|-------|
+| `state clear` | **Kept** | Cleared |
+| `destroy` | **Deleted** | Cleared |
+
+Use:
+- **`state clear`** when you want to stop tracking resources but keep them
+- **[`destroy`](/commands/destroy)** when you want to delete everything
+
+## Next Steps
+
+Common workflows:
+
+1. **After `state list`** - Verify managed resources match expectations
+2. **After `state show`** - Analyze checksums or back up state
+3. **After `state clear`** - Usually followed by [`import`](/commands/import) to rebuild

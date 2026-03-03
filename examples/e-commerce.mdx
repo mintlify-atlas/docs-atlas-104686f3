@@ -1,0 +1,329 @@
+---
+title: 'E-Commerce Store'
+description: 'Complete e-commerce setup with facets, search optimization, and featured products'
+icon: 'cart-shopping'
+---
+
+## Overview
+
+This example demonstrates a production-ready e-commerce search setup with:
+- Rich product schema with multiple facets
+- Search optimization (infix search, token separators)
+- Synonyms for better search recall
+- Overrides for featuring specific products
+- API keys for secure frontend access
+
+## Complete Configuration
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "products",
+      fields: [
+        { name: "title", type: "string" },
+        { name: "description", type: "string", optional: true },
+        { name: "sku", type: "string", index: false },
+        { name: "price", type: "float" },
+        { name: "sale_price", type: "float", optional: true },
+        { name: "category", type: "string", facet: true },
+        { name: "brand", type: "string", facet: true },
+        { name: "colors", type: "string[]", facet: true, optional: true },
+        { name: "sizes", type: "string[]", facet: true, optional: true },
+        { name: "tags", type: "string[]", facet: true, optional: true },
+        { name: "in_stock", type: "bool", facet: true },
+        { name: "rating", type: "float", optional: true },
+        { name: "num_reviews", type: "int32", optional: true },
+        { name: "created_at", type: "int64" },
+        { name: "popularity", type: "int32" },
+      ],
+      default_sorting_field: "popularity",
+      token_separators: ["-", "/"],
+      symbols_to_index: ["#"],
+    },
+  ],
+  aliases: [
+    {
+      name: "products_live",
+      collection: "products",
+    },
+  ],
+  synonyms: [
+    {
+      id: "smartphone-synonyms",
+      collection: "products",
+      synonyms: ["phone", "mobile", "smartphone", "cell phone"],
+    },
+    {
+      id: "tv-synonym",
+      collection: "products",
+      root: "television",
+      synonyms: ["tv", "telly", "television set"],
+    },
+    {
+      id: "laptop-synonyms",
+      collection: "products",
+      synonyms: ["laptop", "notebook", "portable computer"],
+    },
+  ],
+  overrides: [
+    {
+      id: "pin-featured",
+      collection: "products",
+      rule: {
+        query: "featured",
+        match: "exact",
+      },
+      includes: [
+        { id: "product-123", position: 1 },
+        { id: "product-456", position: 2 },
+      ],
+    },
+    {
+      id: "boost-on-sale",
+      collection: "products",
+      rule: {
+        query: "sale",
+        match: "contains",
+      },
+      filter_by: "sale_price:>0",
+      sort_by: "sale_price:asc",
+    },
+    {
+      id: "holiday-promotion",
+      collection: "products",
+      rule: {
+        query: "gift",
+        match: "contains",
+      },
+      filter_by: "tags:=gift-ideas",
+      effective_from_ts: 1701388800, // Dec 1, 2023
+      effective_to_ts: 1704067200,   // Jan 1, 2024
+    },
+  ],
+  apiKeys: [
+    {
+      description: "Search-only key for frontend",
+      actions: ["documents:search"],
+      collections: ["products_live"],
+    },
+  ],
+});
+```
+
+## Field Design Patterns
+
+### Searchable vs. Non-Searchable Fields
+
+```typescript
+// Searchable (default)
+{ name: "title", type: "string" }
+
+// Not searchable (only for retrieval)
+{ name: "sku", type: "string", index: false }
+```
+
+### Faceted Fields for Filtering
+
+Facets enable dynamic filtering in your UI:
+
+```typescript
+{ name: "category", type: "string", facet: true },
+{ name: "brand", type: "string", facet: true },
+{ name: "colors", type: "string[]", facet: true, optional: true },
+{ name: "in_stock", type: "bool", facet: true },
+```
+
+Facet response example:
+```json
+{
+  "facet_counts": [
+    {
+      "field_name": "category",
+      "counts": [
+        { "value": "Electronics", "count": 150 },
+        { "value": "Clothing", "count": 320 }
+      ]
+    }
+  ]
+}
+```
+
+### Price Fields
+
+```typescript
+{ name: "price", type: "float" },
+{ name: "sale_price", type: "float", optional: true },
+```
+
+Use in filters:
+```
+filter_by=price:[10..100] && sale_price:>0
+```
+
+## Search Optimization
+
+### Token Separators
+
+Treat hyphens and slashes as word boundaries:
+
+```typescript
+token_separators: ["-", "/"]
+```
+
+Example: Searching "iPhone 15" will match "iPhone-15-Pro" and "iPhone/15"
+
+### Symbols to Index
+
+Index hashtags and other symbols:
+
+```typescript
+symbols_to_index: ["#"]
+```
+
+Example: Products tagged with "#bestseller" are searchable by "#bestseller"
+
+## Synonyms
+
+### Two-Way Synonyms
+
+All words are interchangeable:
+
+```typescript
+{
+  id: "smartphone-synonyms",
+  collection: "products",
+  synonyms: ["phone", "mobile", "smartphone", "cell phone"],
+}
+```
+
+Searching for any term returns results for all terms.
+
+### One-Way Synonyms (Root Word)
+
+Synonyms map to a root word:
+
+```typescript
+{
+  id: "tv-synonym",
+  collection: "products",
+  root: "television",
+  synonyms: ["tv", "telly", "television set"],
+}
+```
+
+Searching "tv" finds "television", but searching "television" only finds exact matches.
+
+## Overrides (Curations)
+
+### Pin Specific Products
+
+```typescript
+{
+  id: "pin-featured",
+  collection: "products",
+  rule: {
+    query: "featured",
+    match: "exact",
+  },
+  includes: [
+    { id: "product-123", position: 1 },
+    { id: "product-456", position: 2 },
+  ],
+}
+```
+
+### Dynamic Filtering and Sorting
+
+```typescript
+{
+  id: "boost-on-sale",
+  collection: "products",
+  rule: {
+    query: "sale",
+    match: "contains",
+  },
+  filter_by: "sale_price:>0",
+  sort_by: "sale_price:asc",
+}
+```
+
+### Time-Based Promotions
+
+```typescript
+{
+  id: "holiday-promotion",
+  collection: "products",
+  rule: {
+    query: "gift",
+    match: "contains",
+  },
+  filter_by: "tags:=gift-ideas",
+  effective_from_ts: 1701388800, // Dec 1, 2023
+  effective_to_ts: 1704067200,   // Jan 1, 2024
+}
+```
+
+## API Keys
+
+Create scoped keys for frontend use:
+
+```typescript
+apiKeys: [
+  {
+    description: "Search-only key for frontend",
+    actions: ["documents:search"],
+    collections: ["products_live"],
+  },
+]
+```
+
+After running `tsctl apply`, the generated API key will be displayed **once**. Store it securely.
+
+## Deployment
+
+```bash
+# Review changes
+tsctl plan
+
+# Apply configuration
+tsctl apply
+
+# Verify setup
+tsctl state list
+```
+
+## Search Query Examples
+
+### Basic Search
+
+```bash
+curl "http://localhost:8108/collections/products_live/documents/search" \
+  -d 'q=laptop&query_by=title,description' \
+  -H "X-TYPESENSE-API-KEY: ${SEARCH_API_KEY}"
+```
+
+### Faceted Search with Filters
+
+```bash
+curl "http://localhost:8108/collections/products_live/documents/search" \
+  -d 'q=*&facet_by=category,brand,colors&filter_by=in_stock:true && price:[100..500]' \
+  -H "X-TYPESENSE-API-KEY: ${SEARCH_API_KEY}"
+```
+
+### Sort by Multiple Fields
+
+```bash
+curl "http://localhost:8108/collections/products_live/documents/search" \
+  -d 'q=phone&query_by=title&sort_by=rating:desc,popularity:desc' \
+  -H "X-TYPESENSE-API-KEY: ${SEARCH_API_KEY}"
+```
+
+## Next Steps
+
+- Implement [multi-language search](/examples/multi-language) for international stores
+- Add [vector search](/examples/vector-search) for visual similarity
+- Set up [blue/green migrations](/advanced/blue-green-migrations) for schema updates
+- Configure [drift detection](/commands/drift) for production monitoring

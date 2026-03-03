@@ -1,0 +1,481 @@
+---
+title: API Keys
+description: ApiKeyConfig type reference for managing scoped API keys and access control
+---
+
+## ApiKeyConfig
+
+API keys provide scoped access control to Typesense collections and operations. Use tsctl to manage API keys declaratively alongside your schema.
+
+### Properties
+
+<ParamField path="description" type="string" required>
+  Human-readable description of the API key's purpose.
+
+  ```typescript
+  description: "Search-only key for frontend application"
+  ```
+</ParamField>
+
+<ParamField path="actions" type="string[]" required>
+  Array of allowed actions for this key.
+
+  ```typescript
+  actions: ["documents:search"]
+  ```
+
+  See [Available Actions](#available-actions) below.
+</ParamField>
+
+<ParamField path="collections" type="string[]" required>
+  Array of collection names this key can access.
+
+  ```typescript
+  collections: ["products", "categories"]
+  ```
+
+  Use `["*"]` to allow access to all collections.
+</ParamField>
+
+<ParamField path="value" type="string" optional>
+  Pre-generated API key value (for importing existing keys).
+
+  ```typescript
+  value: "xyz123abc456"  // Only used when creating, not stored
+  ```
+
+  <Warning>
+    The `value` is only shown once when the key is created. It's not stored in state.
+  </Warning>
+</ParamField>
+
+<ParamField path="expires_at" type="number" optional>
+  Unix timestamp when the key expires.
+
+  ```typescript
+  expires_at: 1735689600  // 2025-01-01 00:00:00 UTC
+  ```
+
+  The key will be automatically disabled after this time.
+</ParamField>
+
+<ParamField path="autodelete" type="boolean" optional default="false">
+  Automatically delete the key after expiration.
+
+  ```typescript
+  autodelete: true
+  ```
+
+  If `false`, the key is disabled but not deleted.
+</ParamField>
+
+## Available Actions
+
+API keys can be scoped to specific actions:
+
+### Search Actions
+
+<ResponseField name="documents:search" type="string">
+  Search documents in collections.
+
+  ```typescript
+  actions: ["documents:search"]
+  ```
+</ResponseField>
+
+### Document Actions
+
+<ResponseField name="documents:get" type="string">
+  Retrieve individual documents.
+
+  ```typescript
+  actions: ["documents:get"]
+  ```
+</ResponseField>
+
+<ResponseField name="documents:create" type="string">
+  Create new documents.
+
+  ```typescript
+  actions: ["documents:create"]
+  ```
+</ResponseField>
+
+<ResponseField name="documents:upsert" type="string">
+  Create or update documents.
+
+  ```typescript
+  actions: ["documents:upsert"]
+  ```
+</ResponseField>
+
+<ResponseField name="documents:update" type="string">
+  Update existing documents.
+
+  ```typescript
+  actions: ["documents:update"]
+  ```
+</ResponseField>
+
+<ResponseField name="documents:delete" type="string">
+  Delete documents.
+
+  ```typescript
+  actions: ["documents:delete"]
+  ```
+</ResponseField>
+
+### Collection Actions
+
+<ResponseField name="collections:create" type="string">
+  Create new collections.
+
+  ```typescript
+  actions: ["collections:create"]
+  ```
+</ResponseField>
+
+<ResponseField name="collections:get" type="string">
+  Retrieve collection schemas.
+
+  ```typescript
+  actions: ["collections:get"]
+  ```
+</ResponseField>
+
+<ResponseField name="collections:list" type="string">
+  List all collections.
+
+  ```typescript
+  actions: ["collections:list"]
+  ```
+</ResponseField>
+
+<ResponseField name="collections:delete" type="string">
+  Delete collections.
+
+  ```typescript
+  actions: ["collections:delete"]
+  ```
+</ResponseField>
+
+### Wildcard
+
+<ResponseField name="*" type="string">
+  All actions (admin key).
+
+  ```typescript
+  actions: ["*"]
+  ```
+
+  <Warning>Use with caution - grants full access.</Warning>
+</ResponseField>
+
+## Examples
+
+### Search-Only Key (Frontend)
+
+Safe key for public-facing applications:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  apiKeys: [
+    {
+      description: "Public search key for website",
+      actions: ["documents:search"],
+      collections: ["products", "articles"],
+    },
+  ],
+});
+```
+
+### Read-Only Key
+
+Allow reading documents but not modifying them:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  apiKeys: [
+    {
+      description: "Read-only analytics key",
+      actions: ["documents:search", "documents:get"],
+      collections: ["*"],
+    },
+  ],
+});
+```
+
+### Write-Only Key (Indexing)
+
+For backend services that index data:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  apiKeys: [
+    {
+      description: "Data indexing service key",
+      actions: ["documents:create", "documents:upsert", "documents:update"],
+      collections: ["products"],
+    },
+  ],
+});
+```
+
+### Admin Key (Full Access)
+
+Complete access to all collections and operations:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  apiKeys: [
+    {
+      description: "Admin key for infrastructure management",
+      actions: ["*"],
+      collections: ["*"],
+    },
+  ],
+});
+```
+
+### Temporary Key (With Expiration)
+
+Create time-limited access:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+const oneWeekFromNow = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60);
+
+export default defineConfig({
+  apiKeys: [
+    {
+      description: "Temporary partner API access",
+      actions: ["documents:search", "documents:get"],
+      collections: ["products"],
+      expires_at: oneWeekFromNow,
+      autodelete: true,
+    },
+  ],
+});
+```
+
+### Multi-Collection Key
+
+Access multiple specific collections:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  apiKeys: [
+    {
+      description: "E-commerce search key",
+      actions: ["documents:search"],
+      collections: ["products", "categories", "brands", "reviews"],
+    },
+  ],
+});
+```
+
+### Collection-Scoped Admin
+
+Admin access to specific collections only:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  apiKeys: [
+    {
+      description: "Products admin key",
+      actions: ["*"],
+      collections: ["products", "product_analytics"],
+    },
+  ],
+});
+```
+
+### Development Keys
+
+Separate keys for different environments:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+const isDev = process.env.NODE_ENV === "development";
+
+export default defineConfig({
+  apiKeys: [
+    {
+      description: isDev ? "Development search key" : "Production search key",
+      actions: ["documents:search"],
+      collections: ["*"],
+      expires_at: isDev ? undefined : Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60),
+    },
+  ],
+});
+```
+
+## Security Best Practices
+
+### 1. Principle of Least Privilege
+
+Grant only the minimum required permissions:
+
+**Good:**
+```typescript
+{
+  description: "Frontend search",
+  actions: ["documents:search"],
+  collections: ["products"],
+}
+```
+
+**Avoid:**
+```typescript
+{
+  description: "Frontend search",
+  actions: ["*"],
+  collections: ["*"],
+}
+```
+
+### 2. Use Expiration for Temporary Access
+
+Always set expiration for temporary or partner keys:
+
+```typescript
+{
+  description: "Trial access",
+  actions: ["documents:search"],
+  collections: ["products"],
+  expires_at: 1735689600,
+  autodelete: true,
+}
+```
+
+### 3. Separate Keys by Environment
+
+Use different keys for development, staging, and production:
+
+```typescript
+// .env.development
+TYPESENSE_API_KEY=dev_key_123
+
+// .env.production
+TYPESENSE_API_KEY=prod_key_456
+```
+
+### 4. Rotate Keys Regularly
+
+Update API keys periodically:
+
+```bash
+# Create new key
+tsctl apply
+
+# Update applications with new key
+# Remove old key from config
+tsctl apply
+```
+
+### 5. Never Commit Keys to Version Control
+
+Use environment variables:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  apiKeys: [
+    {
+      description: "Search key",
+      actions: ["documents:search"],
+      collections: ["products"],
+      value: process.env.SEARCH_API_KEY,  // From environment
+    },
+  ],
+});
+```
+
+### 6. Monitor Key Usage
+
+Track which keys are accessing your collections:
+
+- Review Typesense logs
+- Set up alerts for unusual activity
+- Audit key permissions regularly
+
+## Key Management
+
+### Creating Keys
+
+Define keys in your config and apply:
+
+```bash
+tsctl apply
+```
+
+The key value is displayed once when created. **Save it immediately** - it won't be shown again.
+
+### Updating Keys
+
+Changing a key's configuration creates a new key:
+
+1. New key is created with updated permissions
+2. Old key is deleted
+3. New key value is displayed
+
+<Warning>
+  Updating a key generates a new key value. You must update all applications using the old key.
+</Warning>
+
+### Deleting Keys
+
+Remove keys from your config:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  apiKeys: [
+    // Remove the key from this array
+  ],
+});
+```
+
+Then apply:
+
+```bash
+tsctl apply
+```
+
+### Importing Existing Keys
+
+Import keys from existing Typesense instance:
+
+```bash
+tsctl import
+```
+
+This generates a config file with your existing API keys (descriptions and permissions only - values are not retrievable).
+
+## Limitations
+
+1. **Key values are not retrievable**: Once created, key values cannot be retrieved from Typesense
+2. **No partial updates**: Changing any property creates a new key
+3. **State tracking by description**: Keys are tracked by their description field
+
+## Related
+
+- [Collections Reference](/config/collections)
+- [Security Best Practices](/config/api-keys)
+- [Multi-Environment Setup](/advanced/multi-environment)

@@ -1,0 +1,501 @@
+---
+title: Fields
+description: Field type reference with all properties and supported field types
+---
+
+## Field
+
+Defines a field in a collection schema with its type and indexing options.
+
+### Properties
+
+<ParamField path="name" type="string" required>
+  Unique field name within the collection.
+
+  ```typescript
+  name: "title"
+  ```
+</ParamField>
+
+<ParamField path="type" type="FieldType" required>
+  Data type of the field. See [Field Types](#field-types) below.
+
+  ```typescript
+  type: "string"
+  ```
+</ParamField>
+
+<ParamField path="optional" type="boolean" optional default="false">
+  Allow null or missing values for this field.
+
+  ```typescript
+  optional: true
+  ```
+</ParamField>
+
+<ParamField path="facet" type="boolean" optional default="false">
+  Enable faceting for filtering and aggregation.
+
+  ```typescript
+  facet: true
+  ```
+
+  Faceting allows you to get counts of documents grouped by field values.
+</ParamField>
+
+<ParamField path="index" type="boolean" optional default="true">
+  Include field in search index.
+
+  ```typescript
+  index: false  // Don't index this field
+  ```
+
+  Set to `false` for fields that should be stored but not searchable.
+</ParamField>
+
+<ParamField path="sort" type="boolean" optional default="false">
+  Enable sorting on this field.
+
+  ```typescript
+  sort: true
+  ```
+
+  Applies to numeric, boolean, and string fields.
+</ParamField>
+
+<ParamField path="infix" type="boolean" optional default="false">
+  Enable infix search (match anywhere in the word).
+
+  ```typescript
+  infix: true
+  ```
+
+  Example: With infix enabled, searching "nation" matches "international".
+</ParamField>
+
+<ParamField path="locale" type="string" optional>
+  Language code for locale-specific text processing.
+
+  ```typescript
+  locale: "en"  // English
+  ```
+
+  Supported locales: `en`, `es`, `de`, `fr`, `it`, `pt`, `ru`, `ja`, `ko`, `zh`, and more.
+</ParamField>
+
+<ParamField path="stem" type="boolean" optional default="false">
+  Enable stemming for better language matching.
+
+  ```typescript
+  stem: true
+  ```
+
+  Example: "running", "runs", "ran" all match searches for "run".
+</ParamField>
+
+<ParamField path="store" type="boolean" optional default="true">
+  Store the original value in addition to indexed tokens.
+
+  ```typescript
+  store: false  // Don't store original value
+  ```
+
+  Set to `false` to save storage space if you don't need to retrieve the original value.
+</ParamField>
+
+<ParamField path="num_dim" type="number" optional>
+  Number of dimensions for vector fields (`float[]`).
+
+  ```typescript
+  num_dim: 384  // For vector embeddings
+  ```
+
+  Required for vector search fields.
+</ParamField>
+
+<ParamField path="vec_dist" type="'cosine' | 'ip'" optional>
+  Distance metric for vector similarity.
+
+  ```typescript
+  vec_dist: "cosine"  // Cosine similarity
+  ```
+
+  - `cosine`: Cosine similarity (normalized)
+  - `ip`: Inner product (dot product)
+</ParamField>
+
+<ParamField path="reference" type="string" optional>
+  Reference to another collection for JOINs.
+
+  ```typescript
+  reference: "users.id"  // Join to users collection on id field
+  ```
+
+  Format: `collection_name.field_name`
+</ParamField>
+
+<ParamField path="range_index" type="boolean" optional default="false">
+  Enable range indexing for efficient numeric range queries.
+
+  ```typescript
+  range_index: true
+  ```
+
+  Improves performance for queries with numeric ranges (e.g., `price: [10..100]`).
+</ParamField>
+
+<ParamField path="embed" type="EmbedConfig" optional>
+  Auto-embedding configuration for vector fields.
+
+  ```typescript
+  embed: {
+    from: ["title", "description"],
+    model_config: {
+      model_name: "ts/all-MiniLM-L12-v2",
+    },
+  }
+  ```
+
+  See [Embedding Configuration](#embedding-configuration) below.
+</ParamField>
+
+## Field Types
+
+Typesense supports the following field types:
+
+### String Types
+
+<ResponseField name="string" type="string">
+  Single text value.
+
+  ```typescript
+  { name: "title", type: "string" }
+  ```
+</ResponseField>
+
+<ResponseField name="string[]" type="string array">
+  Array of text values.
+
+  ```typescript
+  { name: "tags", type: "string[]" }
+  ```
+</ResponseField>
+
+<ResponseField name="string*" type="auto-embedding string">
+  String field with automatic embedding generation.
+
+  ```typescript
+  { name: "content", type: "string*" }
+  ```
+</ResponseField>
+
+### Numeric Types
+
+<ResponseField name="int32" type="32-bit integer">
+  Integer between -2,147,483,648 and 2,147,483,647.
+
+  ```typescript
+  { name: "quantity", type: "int32" }
+  ```
+</ResponseField>
+
+<ResponseField name="int32[]" type="int32 array">
+  Array of 32-bit integers.
+
+  ```typescript
+  { name: "scores", type: "int32[]" }
+  ```
+</ResponseField>
+
+<ResponseField name="int64" type="64-bit integer">
+  Large integer, commonly used for timestamps.
+
+  ```typescript
+  { name: "created_at", type: "int64" }
+  ```
+</ResponseField>
+
+<ResponseField name="int64[]" type="int64 array">
+  Array of 64-bit integers.
+
+  ```typescript
+  { name: "timestamps", type: "int64[]" }
+  ```
+</ResponseField>
+
+<ResponseField name="float" type="floating-point">
+  Decimal number.
+
+  ```typescript
+  { name: "price", type: "float" }
+  ```
+</ResponseField>
+
+<ResponseField name="float[]" type="float array">
+  Array of floating-point numbers, commonly used for vector embeddings.
+
+  ```typescript
+  { name: "embedding", type: "float[]", num_dim: 384 }
+  ```
+</ResponseField>
+
+### Boolean Type
+
+<ResponseField name="bool" type="boolean">
+  True or false value.
+
+  ```typescript
+  { name: "is_active", type: "bool" }
+  ```
+</ResponseField>
+
+<ResponseField name="bool[]" type="boolean array">
+  Array of boolean values.
+
+  ```typescript
+  { name: "flags", type: "bool[]" }
+  ```
+</ResponseField>
+
+### Geospatial Type
+
+<ResponseField name="geopoint" type="[lat, lng]">
+  Geographic coordinate pair.
+
+  ```typescript
+  { name: "location", type: "geopoint" }
+  ```
+
+  Format: `[latitude, longitude]` (e.g., `[37.7749, -122.4194]`)
+</ResponseField>
+
+<ResponseField name="geopoint[]" type="geopoint array">
+  Array of geographic coordinates.
+
+  ```typescript
+  { name: "route", type: "geopoint[]" }
+  ```
+</ResponseField>
+
+### Object Types
+
+<ResponseField name="object" type="nested object">
+  Nested JSON object.
+
+  ```typescript
+  { name: "metadata", type: "object" }
+  ```
+
+  Use with `enable_nested_fields` to automatically index nested properties.
+</ResponseField>
+
+<ResponseField name="object[]" type="object array">
+  Array of nested objects.
+
+  ```typescript
+  { name: "variants", type: "object[]" }
+  ```
+</ResponseField>
+
+### Special Types
+
+<ResponseField name="auto" type="auto-detect">
+  Automatically detect and use the appropriate type.
+
+  ```typescript
+  { name: "dynamic_field", type: "auto" }
+  ```
+
+  <Warning>Use sparingly - explicit types are recommended for better type safety.</Warning>
+</ResponseField>
+
+<ResponseField name="image" type="image embedding">
+  Image field with automatic embedding generation.
+
+  ```typescript
+  { name: "product_image", type: "image" }
+  ```
+</ResponseField>
+
+## Embedding Configuration
+
+For vector search fields with auto-embedding:
+
+### from
+
+Array of source field names to generate embeddings from.
+
+```typescript
+from: ["title", "description"]
+```
+
+### model_config
+
+Embedding model configuration.
+
+<ParamField path="model_name" type="string" required>
+  Name of the embedding model.
+
+  ```typescript
+  model_name: "ts/all-MiniLM-L12-v2"
+  ```
+
+  Built-in models:
+  - `ts/all-MiniLM-L12-v2` (384 dimensions)
+  - `openai/text-embedding-3-small` (1536 dimensions)
+  - `openai/text-embedding-ada-002` (1536 dimensions)
+</ParamField>
+
+<ParamField path="api_key" type="string" optional>
+  API key for external embedding services (e.g., OpenAI).
+
+  ```typescript
+  api_key: process.env.OPENAI_API_KEY
+  ```
+</ParamField>
+
+<ParamField path="indexing_prefix" type="string" optional>
+  Prefix to add to text during indexing.
+
+  ```typescript
+  indexing_prefix: "passage: "
+  ```
+</ParamField>
+
+<ParamField path="query_prefix" type="string" optional>
+  Prefix to add to search queries.
+
+  ```typescript
+  query_prefix: "query: "
+  ```
+</ParamField>
+
+### GCP Vertex AI Configuration
+
+<ParamField path="project_id" type="string" optional>
+  GCP project ID for Vertex AI.
+
+  ```typescript
+  project_id: "my-gcp-project"
+  ```
+</ParamField>
+
+<ParamField path="service_account" type="object" optional>
+  GCP service account credentials.
+
+  ```typescript
+  service_account: {
+    client_email: "service@project.iam.gserviceaccount.com",
+    private_key: "-----BEGIN PRIVATE KEY-----\n...",
+  }
+  ```
+</ParamField>
+
+<ParamField path="access_token" type="string" optional>
+  OAuth access token (alternative to service account).
+</ParamField>
+
+<ParamField path="refresh_token" type="string" optional>
+  OAuth refresh token.
+</ParamField>
+
+<ParamField path="client_id" type="string" optional>
+  OAuth client ID.
+</ParamField>
+
+<ParamField path="client_secret" type="string" optional>
+  OAuth client secret.
+</ParamField>
+
+## Examples
+
+### Basic Text Fields
+
+```typescript
+{
+  name: "articles",
+  fields: [
+    { name: "title", type: "string", infix: true },
+    { name: "body", type: "string", stem: true, locale: "en" },
+    { name: "author", type: "string", facet: true },
+    { name: "tags", type: "string[]", facet: true },
+  ],
+}
+```
+
+### Numeric and Sorting
+
+```typescript
+{
+  name: "products",
+  fields: [
+    { name: "price", type: "float", sort: true, range_index: true },
+    { name: "stock", type: "int32", facet: true },
+    { name: "created_at", type: "int64", sort: true },
+  ],
+  default_sorting_field: "created_at",
+}
+```
+
+### Vector Search
+
+```typescript
+{
+  name: "documents",
+  fields: [
+    { name: "content", type: "string" },
+    {
+      name: "embedding",
+      type: "float[]",
+      num_dim: 384,
+      vec_dist: "cosine",
+      embed: {
+        from: ["content"],
+        model_config: {
+          model_name: "ts/all-MiniLM-L12-v2",
+        },
+      },
+    },
+  ],
+}
+```
+
+### Geospatial
+
+```typescript
+{
+  name: "locations",
+  fields: [
+    { name: "name", type: "string" },
+    { name: "coordinates", type: "geopoint" },
+    { name: "address", type: "string" },
+  ],
+}
+```
+
+### Nested Objects
+
+```typescript
+{
+  name: "products",
+  fields: [
+    { name: "name", type: "string" },
+    { name: "metadata", type: "object", optional: true },
+    { name: "variants", type: "object[]", optional: true },
+  ],
+  enable_nested_fields: true,
+}
+```
+
+### Collection References
+
+```typescript
+{
+  name: "orders",
+  fields: [
+    { name: "id", type: "string" },
+    { name: "user_id", type: "string", reference: "users.id" },
+    { name: "product_id", type: "string", reference: "products.id" },
+  ],
+}
+```

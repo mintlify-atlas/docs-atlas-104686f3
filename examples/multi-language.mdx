@@ -1,0 +1,432 @@
+---
+title: 'Multi-Language Search'
+description: 'Multi-language search with locale, stemming, and language-specific synonyms'
+icon: 'language'
+---
+
+## Overview
+
+This example demonstrates how to build a multi-language search system with:
+- Language-specific fields with locale and stemming
+- Per-language synonym sets using Typesense 30.0+ global synonym sets
+- Fallback to English for missing translations
+- Search across multiple languages
+
+## Configuration
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "products_multilang",
+      fields: [
+        // Universal fields
+        { name: "id", type: "string" },
+        { name: "sku", type: "string", index: false },
+        { name: "price", type: "float" },
+        { name: "category", type: "string", facet: true },
+        { name: "brand", type: "string", facet: true },
+        { name: "in_stock", type: "bool", facet: true },
+        { name: "popularity", type: "int32" },
+
+        // English fields
+        { 
+          name: "title_en", 
+          type: "string",
+          locale: "en",
+          stem: true,
+        },
+        { 
+          name: "description_en", 
+          type: "string", 
+          optional: true,
+          locale: "en",
+          stem: true,
+        },
+
+        // Spanish fields
+        { 
+          name: "title_es", 
+          type: "string", 
+          optional: true,
+          locale: "es",
+          stem: true,
+        },
+        { 
+          name: "description_es", 
+          type: "string", 
+          optional: true,
+          locale: "es",
+          stem: true,
+        },
+
+        // French fields
+        { 
+          name: "title_fr", 
+          type: "string", 
+          optional: true,
+          locale: "fr",
+          stem: true,
+        },
+        { 
+          name: "description_fr", 
+          type: "string", 
+          optional: true,
+          locale: "fr",
+          stem: true,
+        },
+
+        // German fields
+        { 
+          name: "title_de", 
+          type: "string", 
+          optional: true,
+          locale: "de",
+          stem: true,
+        },
+        { 
+          name: "description_de", 
+          type: "string", 
+          optional: true,
+          locale: "de",
+          stem: true,
+        },
+      ],
+      default_sorting_field: "popularity",
+      // Link to global synonym sets (Typesense 30.0+)
+      synonym_sets: ["global_synonyms"],
+    },
+  ],
+  aliases: [
+    {
+      name: "products_live",
+      collection: "products_multilang",
+    },
+  ],
+  // Global synonym sets (Typesense 30.0+)
+  synonymSets: [
+    {
+      name: "global_synonyms",
+      items: [
+        // English synonyms
+        {
+          id: "en-phone",
+          locale: "en",
+          synonyms: ["phone", "mobile", "smartphone", "cell phone"],
+        },
+        {
+          id: "en-tv",
+          locale: "en",
+          root: "television",
+          synonyms: ["tv", "telly", "television set"],
+        },
+        
+        // Spanish synonyms
+        {
+          id: "es-phone",
+          locale: "es",
+          synonyms: ["teléfono", "móvil", "celular", "smartphone"],
+        },
+        {
+          id: "es-tv",
+          locale: "es",
+          root: "televisión",
+          synonyms: ["tv", "tele", "televisor"],
+        },
+        
+        // French synonyms
+        {
+          id: "fr-phone",
+          locale: "fr",
+          synonyms: ["téléphone", "mobile", "portable", "smartphone"],
+        },
+        {
+          id: "fr-tv",
+          locale: "fr",
+          root: "télévision",
+          synonyms: ["tv", "télé", "téléviseur"],
+        },
+        
+        // German synonyms
+        {
+          id: "de-phone",
+          locale: "de",
+          synonyms: ["telefon", "handy", "mobiltelefon", "smartphone"],
+        },
+        {
+          id: "de-tv",
+          locale: "de",
+          root: "fernseher",
+          synonyms: ["tv", "fernseher", "fernsehgerät"],
+        },
+      ],
+    },
+  ],
+});
+```
+
+## Key Concepts
+
+### Locale-Specific Fields
+
+The `locale` property enables language-specific text processing:
+
+```typescript
+{ 
+  name: "title_en", 
+  type: "string",
+  locale: "en",   // English language processing
+  stem: true,      // Enable stemming
+}
+```
+
+Supported locales:
+- `en` - English
+- `es` - Spanish
+- `fr` - French
+- `de` - German
+- `it` - Italian
+- `pt` - Portuguese
+- `ru` - Russian
+- `zh` - Chinese
+- `ja` - Japanese
+- `ko` - Korean
+- And many more...
+
+### Stemming
+
+Stemming reduces words to their root form for better search matching:
+
+```typescript
+{ 
+  name: "description_en", 
+  type: "string",
+  locale: "en",
+  stem: true,  // "running" → "run", "phones" → "phone"
+}
+```
+
+Searching for "phones" will match documents containing "phone", "phones", "phoning", etc.
+
+### Global Synonym Sets (Typesense 30.0+)
+
+Global synonym sets are reusable across multiple collections:
+
+```typescript
+synonymSets: [
+  {
+    name: "global_synonyms",
+    items: [
+      {
+        id: "en-phone",
+        locale: "en",
+        synonyms: ["phone", "mobile", "smartphone"],
+      },
+      {
+        id: "es-phone",
+        locale: "es",
+        synonyms: ["teléfono", "móvil", "celular"],
+      },
+    ],
+  },
+]
+```
+
+Link to collections:
+
+```typescript
+{
+  name: "products_multilang",
+  fields: [...],
+  synonym_sets: ["global_synonyms"],
+}
+```
+
+### Legacy Per-Collection Synonyms (Typesense < 30.0)
+
+For older versions, use per-collection synonyms:
+
+```typescript
+synonyms: [
+  {
+    id: "en-phone",
+    collection: "products_multilang",
+    locale: "en",
+    synonyms: ["phone", "mobile", "smartphone"],
+  },
+  {
+    id: "es-phone",
+    collection: "products_multilang",
+    locale: "es",
+    synonyms: ["teléfono", "móvil", "celular"],
+  },
+]
+```
+
+## Document Structure
+
+Example product document:
+
+```json
+{
+  "id": "product-123",
+  "sku": "PHONE-XYZ-001",
+  "price": 699.99,
+  "category": "Electronics",
+  "brand": "TechBrand",
+  "in_stock": true,
+  "popularity": 95,
+  
+  "title_en": "Smartphone Pro Max",
+  "description_en": "Advanced smartphone with amazing features",
+  
+  "title_es": "Smartphone Pro Max",
+  "description_es": "Teléfono inteligente avanzado con características increíbles",
+  
+  "title_fr": "Smartphone Pro Max",
+  "description_fr": "Smartphone avancé avec des fonctionnalités incroyables",
+  
+  "title_de": "Smartphone Pro Max",
+  "description_de": "Fortschrittliches Smartphone mit erstaunlichen Funktionen"
+}
+```
+
+## Search Queries by Language
+
+### English Search
+
+```bash
+curl "http://localhost:8108/collections/products_live/documents/search" \
+  -d 'q=phone&query_by=title_en,description_en' \
+  -H "X-TYPESENSE-API-KEY: ${SEARCH_API_KEY}"
+```
+
+### Spanish Search
+
+```bash
+curl "http://localhost:8108/collections/products_live/documents/search" \
+  -d 'q=teléfono&query_by=title_es,description_es' \
+  -H "X-TYPESENSE-API-KEY: ${SEARCH_API_KEY}"
+```
+
+### French Search
+
+```bash
+curl "http://localhost:8108/collections/products_live/documents/search" \
+  -d 'q=téléphone&query_by=title_fr,description_fr' \
+  -H "X-TYPESENSE-API-KEY: ${SEARCH_API_KEY}"
+```
+
+### German Search
+
+```bash
+curl "http://localhost:8108/collections/products_live/documents/search" \
+  -d 'q=handy&query_by=title_de,description_de' \
+  -H "X-TYPESENSE-API-KEY: ${SEARCH_API_KEY}"
+```
+
+### Multi-Language Search (with fallback)
+
+Search across multiple languages:
+
+```bash
+curl "http://localhost:8108/collections/products_live/documents/search" \
+  -d 'q=phone&query_by=title_en,title_es,title_fr,description_en' \
+  -H "X-TYPESENSE-API-KEY: ${SEARCH_API_KEY}"
+```
+
+## Application Integration
+
+Dynamic language selection in your application:
+
+```javascript
+const searchByLanguage = async (query, language) => {
+  const languageFields = {
+    en: 'title_en,description_en',
+    es: 'title_es,description_es,title_en,description_en', // fallback to English
+    fr: 'title_fr,description_fr,title_en,description_en',
+    de: 'title_de,description_de,title_en,description_en',
+  };
+
+  const response = await fetch(
+    `https://your-typesense.com/collections/products_live/documents/search`,
+    {
+      method: 'POST',
+      headers: {
+        'X-TYPESENSE-API-KEY': searchApiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        q: query,
+        query_by: languageFields[language] || languageFields.en,
+        facet_by: 'category,brand',
+        filter_by: 'in_stock:true',
+      }),
+    }
+  );
+
+  return response.json();
+};
+
+// Usage
+const results = await searchByLanguage('teléfono', 'es');
+```
+
+## Best Practices
+
+### 1. Always Include English as Fallback
+
+Make English required and other languages optional:
+
+```typescript
+{ name: "title_en", type: "string" },  // Required
+{ name: "title_es", type: "string", optional: true },  // Optional
+```
+
+### 2. Use Global Synonym Sets
+
+If using Typesense 30.0+, prefer global synonym sets for easier management:
+
+```typescript
+synonym_sets: ["global_synonyms"]
+```
+
+### 3. Apply Consistent Stemming
+
+Enable stemming for all searchable text fields:
+
+```typescript
+{ name: "title_en", type: "string", locale: "en", stem: true }
+```
+
+### 4. Structure Field Names Consistently
+
+Use a consistent naming pattern:
+
+```
+{fieldname}_{locale}
+```
+
+Examples: `title_en`, `title_es`, `description_en`, `description_fr`
+
+## Deployment
+
+```bash
+# Validate configuration
+tsctl validate
+
+# Plan changes
+tsctl plan
+
+# Apply configuration
+tsctl apply
+```
+
+## Next Steps
+
+- Combine with [vector search](/examples/vector-search) for multi-language semantic search
+- Implement [overrides](/config/overrides) for language-specific promotions
+- Set up [environments](/advanced/multi-environment) for testing translations
+- Use [migration](/features/migration) for adding new languages without downtime

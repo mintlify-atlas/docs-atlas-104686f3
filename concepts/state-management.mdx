@@ -1,0 +1,485 @@
+---
+title: "State Management"
+description: "How tsctl tracks infrastructure state in Typesense"
+---
+
+tsctl tracks the state of your managed Typesense resources to enable safe, predictable infrastructure changes. Unlike traditional IaC tools that store state in external files or backends, tsctl stores state **directly in Typesense**.
+
+## The `_tsctl_state` Collection
+
+All state is stored in a special Typesense collection named `_tsctl_state` (src/state/index.ts:14):
+
+```typescript State collection structure
+const STATE_COLLECTION_NAME = "_tsctl_state";
+const STATE_DOC_ID = "state";
+
+interface StateDocument {
+  id: string;              // Always "state"
+  state: string;           // JSON stringified State object
+  updated_at: number;      // Unix timestamp in milliseconds
+}
+```
+
+### State Schema
+
+The collection stores a single document with these fields (src/state/index.ts:17-21):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Document ID (always "state") |
+| `state` | string | JSON-serialized state containing all managed resources |
+| `updated_at` | int64 | Timestamp of last update (Unix milliseconds) |
+
+### Creating the State Collection
+
+The state collection is automatically created on first use (src/state/index.ts:26-50):
+
+```typescript Auto-creation
+export async function ensureStateCollection(): Promise<void> {
+  const client = getClient();
+
+  try {
+    await client.collections(STATE_COLLECTION_NAME).retrieve();
+  } catch (error: unknown) {
+    if (error.httpStatus === 404) {
+      // Collection doesn't exist, create it
+      await client.collections().create({
+        name: STATE_COLLECTION_NAME,
+        fields: [
+          { name: "state", type: "string" },
+          { name: "updated_at", type: "int64" },
+        ],
+      });
+    }
+  }
+}
+```
+
+<Note>
+The `_tsctl_state` collection is created automatically. You never need to create it manually.
+</Note>
+
+## What's Tracked in State
+
+The state tracks every resource managed by tsctl:
+
+```typescript State structure
+interface State {
+  version: string;              // State schema version (currently "1.0")
+  resources: ManagedResource[]; // Array of managed resources
+}
+
+interface ManagedResource {
+  identifier: ResourceIdentifier;  // Unique resource identifier
+  config: unknown;                 // Full resource configuration
+  checksum: string;                // SHA-256 hash for change detection
+  lastUpdated: string;             // ISO 8601 timestamp
+}
+
+interface ResourceIdentifier {
+  type: ResourceType;    // "collection" | "alias" | "synonym" | etc.
+  name: string;          // Resource name
+  collection?: string;   // Parent collection (for synonyms/overrides)
+}
+```
+
+### Tracked Resource Types
+
+tsctl tracks these resource types (src/types/index.ts:244):
+
+- **collection** - Typesense collections
+- **alias** - Collection aliases
+- **synonym** - Per-collection synonyms (legacy, Typesense < 30.0)
+- **synonymSet** - Global synonym sets (Typesense 30.0+)
+- **override** - Search result overrides/curations
+- **analyticsRule** - Analytics and popular queries rules
+- **apiKey** - API keys (tracked by description)
+
+### Resource Identifiers
+
+Each resource has a unique identifier (src/state/index.ts:125-130):
+
+```typescript Examples
+// Collection: collection.products
+{ type: "collection", name: "products" }
+
+// Alias: alias.products_live
+{ type: "alias", name: "products_live" }
+
+// Synonym: synonym.products.size-synonyms
+{ type: "synonym", collection: "products", name: "size-synonyms" }
+
+// Override: override.products.promo-2024
+{ type: "override", collection: "products", name: "promo-2024" }
+
+// API Key: apiKey.Search API Key
+{ type: "apiKey", name: "Search API Key" }
+```
+
+## Checksums for Change Detection
+
+tsctl computes a SHA-256 checksum for each resource configuration to detect changes (src/state/index.ts:115-120):
+
+```typescript Checksum computation
+export function computeChecksum(
+  config: CollectionConfig | AliasConfig | /* ... */
+): string {
+  const normalized = JSON.stringify(config, Object.keys(config).sort());
+  return createHash("sha256").update(normalized).digest("hex").slice(0, 16);
+}
+```
+
+### How Checksums Work
+
+1. **Normalization** - Config is serialized to JSON with sorted keys
+2. **Hashing** - SHA-256 hash is computed
+3. **Truncation** - First 16 characters used (64 bits)
+4. **Storage** - Checksum stored with the resource in state
+
+### Why Checksums Matter
+
+Checksums enable:
+
+- **Fast comparison** - Quickly detect if a resource changed
+- **Drift detection** - Compare state checksums with actual Typesense resources
+- **Idempotency** - Skip updates when configuration hasn't changed
+
+<Tip>
+Checksums are deterministic. The same configuration always produces the same checksum.
+</Tip>
+
+## Reading and Writing State
+
+### Loading State
+
+State is loaded from Typesense before every operation (src/state/index.ts:54-82):
+
+```typescript Load state
+export async function loadState(): Promise<State> {
+  const client = getClient();
+
+  try {
+    await ensureStateCollection();
+
+    const doc = await client
+      .collections(STATE_COLLECTION_NAME)
+      .documents(STATE_DOC_ID)
+      .retrieve() as StateDocument;
+
+    return JSON.parse(doc.state) as State;
+  } catch (error: unknown) {
+    if (error.httpStatus === 404) {
+      // No state exists yet - return empty state
+      return {
+        version: "1.0",
+        resources: [],
+      };
+    }
+    throw error;
+  }
+}
+```
+
+**Empty State**: If no state exists, an empty state with version "1.0" is returned.
+
+### Saving State
+
+State is saved after successful apply operations (src/state/index.ts:87-110):
+
+```typescript Save state
+export async function saveState(state: State): Promise<void> {
+  const client = getClient();
+
+  await ensureStateCollection();
+
+  const doc: StateDocument = {
+    id: STATE_DOC_ID,
+    state: JSON.stringify(state),
+    updated_at: Date.now(),
+  };
+
+  try {
+    await client
+      .collections(STATE_COLLECTION_NAME)
+      .documents()
+      .upsert(doc);
+  } catch {
+    // If upsert fails, try create
+    await client
+      .collections(STATE_COLLECTION_NAME)
+      .documents()
+      .create(doc);
+  }
+}
+```
+
+**Atomic Updates**: State is saved atomically using Typesense's upsert operation.
+
+## State Operations
+
+### Viewing State
+
+You can inspect the current state:
+
+```bash
+# List all managed resources
+$ tsctl state list
+
+Managed resources:
+
+  collection.products
+    Checksum: a3f5e9c1b2d4f6a8
+    Updated: 2024-03-01T10:30:00.000Z
+
+  alias.products_live
+    Checksum: b4c6d8e2a1f3b5c7
+    Updated: 2024-03-01T10:30:00.000Z
+
+  synonym.products.size-synonyms
+    Checksum: c5d7e9f3b2a4c6d8
+    Updated: 2024-03-01T10:30:00.000Z
+```
+
+```bash
+# Show full state as JSON
+$ tsctl state show
+{
+  "version": "1.0",
+  "resources": [
+    {
+      "identifier": {
+        "type": "collection",
+        "name": "products"
+      },
+      "config": {
+        "name": "products",
+        "fields": [...]
+      },
+      "checksum": "a3f5e9c1b2d4f6a8",
+      "lastUpdated": "2024-03-01T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+### Clearing State
+
+You can clear state without deleting resources:
+
+```bash
+$ tsctl state clear
+⚠ Clear state? Resources will NOT be deleted. (yes/no): yes
+✓ State cleared.
+```
+
+<Warning>
+Clearing state doesn't delete resources in Typesense. It only removes tsctl's tracking. The resources will appear as "unmanaged" in the next plan.
+</Warning>
+
+### Importing Existing Resources
+
+You can import existing Typesense resources into state:
+
+```bash
+$ tsctl import
+Importing resources...
+✓ Resources imported
+
+Found:
+  Collections: 3
+  Aliases: 2
+  Synonyms: 5
+  API Keys: 1
+
+✓ Config written to tsctl.imported.config.ts
+✓ State saved to Typesense
+```
+
+This generates a configuration file and updates state to track the imported resources.
+
+## Why Store State in Typesense?
+
+tsctl takes a unique approach by storing state in Typesense itself. This design has several advantages:
+
+### No External State Storage
+
+**Traditional approach** (Terraform, Pulumi):
+- Requires separate state storage (S3, Azure Blob, etc.)
+- Needs state locking mechanisms
+- Requires network access to state backend
+- Potential for state file corruption or loss
+
+**tsctl approach**:
+- State lives in the same Typesense instance you're managing
+- No additional infrastructure required
+- Automatic state locking via Typesense's ACID guarantees
+- State is as available as your Typesense cluster
+
+### Simplicity
+
+<CodeGroup>
+```bash Traditional IaC - Terraform
+# Configure remote state backend
+terraform {
+  backend "s3" {
+    bucket = "my-terraform-state"
+    key    = "typesense/terraform.tfstate"
+    region = "us-west-2"
+    
+    # Need state locking
+    dynamodb_table = "terraform-locks"
+    encrypt        = true
+  }
+}
+
+# Need AWS credentials
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
+```
+
+```bash tsctl - No state configuration
+# Just connect to Typesense
+export TYPESENSE_HOST=localhost
+export TYPESENSE_PORT=8108
+export TYPESENSE_API_KEY=xyz
+
+# State automatically managed
+tsctl apply
+```
+</CodeGroup>
+
+### Security and Access Control
+
+- State uses the same API key as your Typesense operations
+- No separate credentials needed for state storage
+- State collection can use Typesense's built-in access control
+
+### High Availability
+
+- If you run Typesense in HA mode (clustered), state is automatically replicated
+- No need for separate state replication setup
+- State is as durable as your Typesense data
+
+## State and Concurrency
+
+Typesense's document upsert operations are atomic, providing automatic state locking:
+
+```typescript Atomic state updates
+// Last write wins - no explicit locking needed
+await client
+  .collections(STATE_COLLECTION_NAME)
+  .documents()
+  .upsert(doc);
+```
+
+<Warning>
+**Concurrent applies**: While state updates are atomic, running multiple `tsctl apply` commands concurrently is not recommended. The last operation will overwrite state from earlier operations.
+</Warning>
+
+## State and Drift Detection
+
+tsctl can detect when resources are modified outside of tsctl ("drift"):
+
+```bash
+$ tsctl drift
+Detecting drift...
+✓ Drift detection complete
+
+Drift Detection Report:
+
+  Modified outside of tsctl:
+    ~ collection.products
+        - "default_sorting_field": "created_at"
+        + "default_sorting_field": "updated_at"
+
+  Deleted outside of tsctl:
+    - alias.products_old
+
+  Unmanaged resources (not in config):
+    ? collection.temp_collection
+
+Summary:
+  1 modified, 1 deleted, 1 unmanaged
+
+  Run 'tsctl apply' to reconcile state with config.
+  Run 'tsctl import' to add unmanaged resources to config.
+```
+
+Drift detection compares:
+1. **State** - What tsctl expects (from `_tsctl_state`)
+2. **Actual** - What exists in Typesense (from API calls)
+3. **Config** - What's defined in your configuration file
+
+## Backup and Recovery
+
+### Exporting State
+
+You can export state for backup:
+
+```bash
+$ tsctl state show > state-backup.json
+```
+
+### Recovering State
+
+If state is lost, you can recover using `tsctl import`:
+
+```bash
+# Import all existing resources
+$ tsctl import -o tsctl.recovered.config.ts
+
+# Review the generated config
+$ cat tsctl.recovered.config.ts
+
+# Apply to restore state
+$ tsctl apply -c tsctl.recovered.config.ts
+```
+
+### Manual State Recovery
+
+You can manually restore state by creating a document in `_tsctl_state`:
+
+```typescript Manual state restoration
+import Typesense from "typesense";
+
+const client = new Typesense.Client({
+  nodes: [{ host: "localhost", port: 8108, protocol: "http" }],
+  apiKey: "xyz",
+});
+
+const state = {
+  version: "1.0",
+  resources: [
+    // ... your resources
+  ],
+};
+
+await client
+  .collections("_tsctl_state")
+  .documents()
+  .upsert({
+    id: "state",
+    state: JSON.stringify(state),
+    updated_at: Date.now(),
+  });
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Plan & Apply Workflow" icon="code-compare" href="/concepts/plan-apply-workflow">
+    Learn the Terraform-like workflow for safe changes
+  </Card>
+  
+  <Card title="Drift Detection" icon="binoculars" href="/advanced/drift-detection">
+    Deep dive into drift detection and resolution
+  </Card>
+  
+  <Card title="State Commands" icon="terminal" href="/commands/state">
+    Reference for all state management commands
+  </Card>
+  
+  <Card title="Import Command" icon="download" href="/commands/import">
+    Import existing resources into tsctl
+  </Card>
+</CardGroup>

@@ -1,0 +1,137 @@
+---
+title: Introduction
+description: Terraform-like infrastructure-as-code for Typesense
+---
+
+<img
+  className="block dark:hidden"
+  src="/images/hero-light.svg"
+  alt="tsctl Hero Light"
+/>
+<img
+  className="hidden dark:block"
+  src="/images/hero-dark.svg"
+  alt="tsctl Hero Dark"
+/>
+
+## What is tsctl?
+
+tsctl is a **declarative infrastructure-as-code CLI** for managing Typesense collections, aliases, synonyms, overrides, and API keys. It brings the familiar Terraform plan/apply workflow to Typesense, making it easy to version control your search infrastructure and safely deploy changes across environments.
+
+<CardGroup cols={2}>
+  <Card
+    title="Declarative Configuration"
+    icon="code"
+  >
+    Define your Typesense schema in TypeScript, JSON, or YAML with full type safety and autocomplete
+  </Card>
+  <Card
+    title="Plan/Apply Workflow"
+    icon="timeline"
+  >
+    Preview changes before applying them, just like Terraform - see exactly what will be created, updated, or deleted
+  </Card>
+  <Card
+    title="Built-in State Management"
+    icon="database"
+  >
+    State stored directly in Typesense - no external storage needed, state travels with your instance
+  </Card>
+  <Card
+    title="Multi-Environment Support"
+    icon="globe"
+  >
+    Manage development, staging, and production with environment-specific configuration files
+  </Card>
+</CardGroup>
+
+## Key Features
+
+### Infrastructure as Code
+Define your entire Typesense configuration in version-controlled files. Use TypeScript for full type safety, or choose JSON/YAML for simplicity.
+
+### Safe Deployments
+The plan/apply workflow shows you exactly what will change before making any modifications to your Typesense instance.
+
+### Drift Detection
+Detect when resources have been modified outside of tsctl, helping you maintain consistency across environments.
+
+### Zero-Downtime Migrations
+Blue/green deployment pattern for collection schema updates, enabling schema changes without downtime.
+
+### Import Existing Resources
+Start using tsctl with your existing Typesense instance - import all resources into managed state with a single command.
+
+## What You Can Manage
+
+<CardGroup cols={3}>
+  <Card title="Collections" icon="table">
+    Full schema management including fields, types, facets, sorting, and advanced features like vector search
+  </Card>
+  <Card title="Aliases" icon="link">
+    Point-in-time collection references for blue/green deployments and version management
+  </Card>
+  <Card title="Synonyms" icon="repeat">
+    Both legacy per-collection synonyms and Typesense 30.0+ global synonym sets
+  </Card>
+  <Card title="Overrides" icon="wand-magic-sparkles">
+    Search result curations, pinning, filtering, and query transformations
+  </Card>
+  <Card title="Analytics Rules" icon="chart-line">
+    Popular queries, no-hits queries, and custom analytics event tracking
+  </Card>
+  <Card title="API Keys" icon="key">
+    Scoped API keys with specific permissions and expiration dates
+  </Card>
+</CardGroup>
+
+## Get Started
+
+<CardGroup cols={2}>
+  <Card
+    title="Installation"
+    icon="download"
+    href="/installation"
+  >
+    Install tsctl with npm or use directly with npx
+  </Card>
+  <Card
+    title="Quick Start"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Get up and running in 5 minutes with a sample project
+  </Card>
+  <Card
+    title="Configuration Reference"
+    icon="book"
+    href="/configuration/overview"
+  >
+    Complete guide to configuring collections, aliases, and more
+  </Card>
+  <Card
+    title="CLI Commands"
+    icon="terminal"
+    href="/cli/commands"
+  >
+    Explore all available commands and options
+  </Card>
+</CardGroup>
+
+## Why tsctl?
+
+**Version Control Your Search Infrastructure**  
+Treat your Typesense configuration like code - commit it, review it, and track changes over time.
+
+**Team Collaboration**  
+Clear audit trail of who changed what and when. Review infrastructure changes in pull requests.
+
+**Consistent Environments**  
+Ensure development, staging, and production stay in sync. Detect and prevent configuration drift.
+
+**Safe Deployments**  
+Never guess what will happen - preview all changes before they're applied to your production instance.
+
+<Note>
+  tsctl is open source and built with TypeScript. Contributions welcome at [github.com/akshitkrnagpal/tsctl](https://github.com/akshitkrnagpal/tsctl)
+</Note>

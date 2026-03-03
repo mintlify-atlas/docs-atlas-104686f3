@@ -1,0 +1,165 @@
+---
+title: Configuration Overview
+description: Overview of tsctl configuration structure, defineConfig helper, and supported file formats
+---
+
+## Configuration Structure
+
+tsctl uses a declarative configuration file to define your Typesense infrastructure. The configuration is type-safe and supports multiple file formats.
+
+### defineConfig Helper
+
+The `defineConfig` function provides TypeScript type safety and validation for your configuration:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [...],
+  aliases: [...],
+  synonyms: [...],
+  synonymSets: [...],
+  overrides: [...],
+  analyticsRules: [...],
+  apiKeys: [...],
+});
+```
+
+### Configuration Schema
+
+The full configuration object supports the following top-level properties:
+
+<ParamField path="collections" type="CollectionConfig[]" optional>
+  Array of collection definitions. See [Collections](/config/collections) for details.
+</ParamField>
+
+<ParamField path="aliases" type="AliasConfig[]" optional>
+  Array of collection aliases. See [Aliases](/config/aliases) for details.
+</ParamField>
+
+<ParamField path="synonyms" type="SynonymConfig[]" optional>
+  Legacy per-collection synonyms (Typesense < 30.0). See [Synonyms](/config/synonyms) for details.
+</ParamField>
+
+<ParamField path="synonymSets" type="SynonymSetConfig[]" optional>
+  Global reusable synonym sets (Typesense 30.0+). See [Synonyms](/config/synonyms) for details.
+</ParamField>
+
+<ParamField path="overrides" type="OverrideConfig[]" optional>
+  Search result curations and overrides. See [Overrides](/config/overrides) for details.
+</ParamField>
+
+<ParamField path="analyticsRules" type="AnalyticsRuleConfig[]" optional>
+  Analytics and event tracking rules. See [Analytics Rules](/config/analytics-rules) for details.
+</ParamField>
+
+<ParamField path="apiKeys" type="ApiKeyConfig[]" optional>
+  Scoped API keys for access control. See [API Keys](/config/api-keys) for details.
+</ParamField>
+
+## Supported File Formats
+
+tsctl searches for configuration files in the following order:
+
+| File | Format |
+|------|--------|
+| `package.json` | `"tsctl"` property |
+| `.tsctlrc` | JSON or YAML |
+| `.tsctlrc.json` | JSON |
+| `.tsctlrc.yaml` / `.tsctlrc.yml` | YAML |
+| `.tsctlrc.js` / `.tsctlrc.cjs` / `.tsctlrc.mjs` | JavaScript |
+| `.tsctlrc.ts` / `.tsctlrc.cts` / `.tsctlrc.mts` | TypeScript |
+| `tsctl.config.js` / `tsctl.config.cjs` / `tsctl.config.mjs` | JavaScript |
+| `tsctl.config.ts` / `tsctl.config.cts` / `tsctl.config.mts` | TypeScript |
+| `tsctl.config.json` | JSON |
+| `tsctl.config.yaml` / `tsctl.config.yml` | YAML |
+| `typesense.config.*` | Legacy (all formats) |
+
+### TypeScript (Recommended)
+
+```typescript
+// tsctl.config.ts
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "products",
+      fields: [
+        { name: "name", type: "string" },
+        { name: "price", type: "float" },
+        { name: "category", type: "string", facet: true },
+      ],
+      default_sorting_field: "price",
+    },
+  ],
+  aliases: [
+    {
+      name: "products_live",
+      collection: "products",
+    },
+  ],
+});
+```
+
+### JSON
+
+```json
+// tsctl.config.json
+{
+  "collections": [
+    {
+      "name": "products",
+      "fields": [
+        { "name": "name", "type": "string" },
+        { "name": "price", "type": "float" }
+      ]
+    }
+  ]
+}
+```
+
+### YAML
+
+```yaml
+# tsctl.config.yaml
+collections:
+  - name: products
+    fields:
+      - name: name
+        type: string
+      - name: price
+        type: float
+```
+
+### package.json
+
+```json
+{
+  "name": "my-app",
+  "tsctl": {
+    "collections": [
+      {
+        "name": "products",
+        "fields": [
+          { "name": "name", "type": "string" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+## Validation
+
+Validate your configuration file without making any changes:
+
+```bash
+tsctl validate
+```
+
+This command:
+- Parses your configuration file
+- Validates the schema using Zod
+- Reports any type errors or missing required fields
+- Exits with code 0 if valid, 1 if invalid

@@ -1,0 +1,702 @@
+---
+title: "Plan & Apply Workflow"
+description: "Understand tsctl's Terraform-like workflow for safe infrastructure changes"
+---
+
+tsctl uses a **plan-then-apply** workflow inspired by Terraform, ensuring you always know what changes will be made before they happen.
+
+## The Two-Step Process
+
+<Steps>
+  <Step title="Plan - Preview Changes">
+    Build a plan showing exactly what will be created, updated, or deleted
+    
+    ```bash
+    tsctl plan
+    ```
+  </Step>
+  
+  <Step title="Apply - Execute Changes">
+    Review the plan and apply changes with confirmation
+    
+    ```bash
+    tsctl apply
+    ```
+  </Step>
+</Steps>
+
+## Plan: Preview Your Changes
+
+The `plan` command compares your configuration with actual Typesense state and shows what will change:
+
+```bash
+$ tsctl plan
+Loading config...
+✓ Config loaded
+Building plan...
+✓ Plan built
+
+Typesense Plan:
+
+  + collection.products (create)
+      + "name": "products"
+      + "fields": [
+      +   { "name": "title", "type": "string" },
+      +   { "name": "price", "type": "float" },
+      +   { "name": "category", "type": "string", "facet": true }
+      + ]
+      + "default_sorting_field": "created_at"
+
+  ~ alias.products_live (update)
+      - "collection": "products_v1"
+      + "collection": "products"
+
+  - collection.products_old (delete)
+      - "name": "products_old"
+      - "fields": [...]
+
+    collection.users (no changes)
+
+Summary:
+  1 to create, 1 to update, 1 to delete, 1 unchanged
+```
+
+### Plan Output Symbols
+
+The plan uses color-coded symbols to indicate actions:
+
+| Symbol | Color | Action | Description |
+|--------|-------|--------|-------------|
+| `+` | Green | Create | Resource will be created |
+| `~` | Yellow | Update | Resource will be updated in-place |
+| `-` | Red | Delete | Resource will be deleted |
+| (space) | Gray | No change | Resource exists but unchanged |
+
+### How Plans Are Built
+
+The plan is built by comparing three sources (src/plan/index.ts:204-531):
+
+1. **Desired Config** - What's defined in your `tsctl.config.ts`
+2. **Current State** - What tsctl knows about (from `_tsctl_state`)
+3. **Actual Resources** - What exists in Typesense (from API calls)
+
+```typescript Plan building logic
+export async function buildPlan(config: TypesenseConfig): Promise<Plan> {
+  const state = await loadState();
+  const changes: ResourceChange[] = [];
+  const desiredResources = new Set<string>();
+
+  // For each resource in config
+  for (const collectionConfig of config.collections) {
+    const identifier = { type: "collection", name: collectionConfig.name };
+    desiredResources.add(formatResourceId(identifier));
+
+    // Check if it exists in Typesense
+    const existing = await getCollection(collectionConfig.name);
+
+    if (!existing) {
+      // CREATE: Resource doesn't exist
+      changes.push({
+        action: "create",
+        identifier,
+        after: collectionConfig,
+        diff: generateDiff(null, collectionConfig),
+      });
+    } else if (!configsEqual(existing, collectionConfig)) {
+      // UPDATE: Resource exists but differs
+      changes.push({
+        action: "update",
+        identifier,
+        before: existing,
+        after: collectionConfig,
+        diff: generateDiff(existing, collectionConfig),
+      });
+    } else {
+      // NO CHANGE: Resource matches config
+      changes.push({
+        action: "no-change",
+        identifier,
+        before: existing,
+        after: collectionConfig,
+      });
+    }
+  }
+
+  // Find resources to DELETE (in state but not in config)
+  for (const resource of state.resources) {
+    const resourceId = formatResourceId(resource.identifier);
+    if (!desiredResources.has(resourceId)) {
+      changes.push({
+        action: "delete",
+        identifier: resource.identifier,
+        before: resource.config,
+        diff: generateDiff(resource.config, null),
+      });
+    }
+  }
+
+  return { changes, hasChanges, summary };
+}
+```
+
+### Smart Configuration Comparison
+
+tsctl normalizes configurations before comparison to avoid false positives (src/plan/index.ts:117-170):
+
+```typescript Normalization
+// Handle masked values (API keys, etc.)
+function normalizeRemoteForComparison(remote, local) {
+  // Replace masked values like "sk-pr****" with local values
+  if (isMaskedValue(remoteValue)) {
+    result[key] = localValue;
+  }
+  
+  // Strip computed fields not in local config
+  // Only include keys that exist in local config
+  for (const key of Object.keys(local)) {
+    if (remoteValue !== undefined) {
+      result[key] = remoteValue;
+    }
+  }
+  
+  return result;
+}
+```
+
+This handles:
+- **Masked fields** - Typesense returns `"****"` for sensitive values
+- **Computed fields** - Fields added by Typesense (like `num_documents`)
+- **Default values** - Fields omitted in config but set by Typesense
+- **Field ordering** - Arrays reordered to match local config
+
+### Saving Plans
+
+You can save a plan to a file for review or automation:
+
+```bash
+$ tsctl plan --out plan.json
+✓ Plan built
+
+Typesense Plan:
+  ...
+
+Plan saved to /path/to/plan.json
+```
+
+## Apply: Execute Your Changes
+
+The `apply` command executes the planned changes:
+
+```bash
+$ tsctl apply
+Loading config...
+✓ Config loaded
+Building plan...
+✓ Plan built
+
+Typesense Plan:
+
+  + collection.products (create)
+      ...
+
+Summary:
+  1 to create, 0 to update, 0 to delete, 0 unchanged
+
+Do you want to apply these changes? (yes/no): yes
+
+Applying 1 changes...
+
+✓ + collection.products
+
+State saved.
+
+Apply complete:
+  1 applied
+```
+
+### Confirmation Prompt
+
+By default, `apply` asks for confirmation before making changes. You can skip this with `--yes`:
+
+```bash
+# Auto-approve (useful for CI/CD)
+$ tsctl apply --yes
+```
+
+<Warning>
+The `--yes` flag bypasses confirmation. Use carefully, especially in production.
+</Warning>
+
+### Apply Process
+
+The apply operation follows this sequence (src/apply/index.ts:160-267):
+
+1. **Load configuration** - Parse and validate config file
+2. **Build plan** - Compare desired vs actual state
+3. **Display plan** - Show user what will change
+4. **Confirm** - Prompt for approval (unless `--yes`)
+5. **Execute changes** - Apply in dependency order
+6. **Update state** - Save new state to Typesense
+
+```typescript Apply execution
+export async function applyPlan(
+  plan: Plan,
+  config: TypesenseConfig,
+  options: { autoApprove?: boolean } = {}
+): Promise<ApplyResult> {
+  const changesToApply = plan.changes.filter((c) => c.action !== "no-change");
+
+  if (changesToApply.length === 0) {
+    console.log("No changes to apply.");
+    return result;
+  }
+
+  // Sort changes by dependency order
+  const creates = changesToApply.filter((c) => c.action === "create")
+    .sort((a, b) => sortByType(a, b, createOrder));
+  const updates = changesToApply.filter((c) => c.action === "update")
+    .sort((a, b) => sortByType(a, b, createOrder));
+  const deletes = changesToApply.filter((c) => c.action === "delete")
+    .sort((a, b) => sortByType(a, b, deleteOrder));
+
+  const orderedChanges = [...creates, ...updates, ...deletes];
+
+  // Apply each change
+  for (const change of orderedChanges) {
+    const spinner = ora(`${actionSymbol} ${resourceId}`).start();
+    
+    try {
+      await applyChange(change);
+      spinner.succeed();
+      result.applied.push(change);
+    } catch (error) {
+      spinner.fail();
+      result.failed.push({ change, error });
+      result.success = false;
+    }
+  }
+
+  // Update state after successful changes
+  if (result.applied.length > 0) {
+    const currentState = await loadState();
+    const newState = buildNewState(currentState, config);
+    await saveState(newState);
+  }
+
+  return result;
+}
+```
+
+### Dependency Ordering
+
+Changes are applied in the correct dependency order (src/apply/index.ts:184-206):
+
+**Creation order** (dependencies first):
+1. Synonym sets (referenced by collections)
+2. Collections
+3. Aliases (reference collections)
+4. Synonyms (belong to collections)
+5. Overrides (belong to collections)
+6. Analytics rules
+7. API keys
+
+**Deletion order** (reverse of creation):
+1. API keys
+2. Analytics rules
+3. Overrides
+4. Synonyms
+5. Aliases
+6. Collections
+7. Synonym sets (deleted last)
+
+### Real-time Progress
+
+Apply shows real-time progress with spinners:
+
+```bash
+Applying 3 changes...
+
+✓ + collection.products
+✓ + alias.products_live
+⠸ ~ collection.users
+```
+
+### Error Handling
+
+If an apply operation fails, the error is reported but other changes continue:
+
+```bash
+Applying 3 changes...
+
+✓ + collection.products
+✗ + alias.invalid_alias
+   Error: Collection 'nonexistent' not found
+✓ + synonym.products.sizes
+
+State saved.
+
+Apply complete:
+  2 applied
+  1 failed
+```
+
+<Note>
+Partially applied changes are saved to state. You can fix the errors and re-run `apply` to complete the operation.
+</Note>
+
+## Complete Workflow Example
+
+Here's a complete example of the plan-apply workflow:
+
+<Steps>
+  <Step title="Create Configuration">
+    ```typescript tsctl.config.ts
+    import { defineConfig } from "tsctl";
+
+    export default defineConfig({
+      collections: [
+        {
+          name: "products",
+          fields: [
+            { name: "name", type: "string" },
+            { name: "price", type: "float" },
+            { name: "category", type: "string", facet: true },
+          ],
+          default_sorting_field: "created_at",
+        },
+      ],
+      aliases: [
+        {
+          name: "products_live",
+          collection: "products",
+        },
+      ],
+    });
+    ```
+  </Step>
+  
+  <Step title="Validate Configuration">
+    ```bash
+    $ tsctl validate
+    Validating config...
+    ✓ Config is valid
+
+    Resources defined:
+      Collections: 1
+        - products (3 fields)
+      Aliases: 1
+        - products_live → products
+    ```
+  </Step>
+  
+  <Step title="Preview Changes">
+    ```bash
+    $ tsctl plan
+    Loading config...
+    ✓ Config loaded
+    Building plan...
+    ✓ Plan built
+
+    Typesense Plan:
+
+      + collection.products (create)
+          + "name": "products"
+          + "fields": [
+          +   { "name": "name", "type": "string" },
+          +   { "name": "price", "type": "float" },
+          +   { "name": "category", "type": "string", "facet": true }
+          + ]
+          + "default_sorting_field": "created_at"
+
+      + alias.products_live (create)
+          + "name": "products_live"
+          + "collection": "products"
+
+    Summary:
+      2 to create, 0 to update, 0 to delete, 0 unchanged
+    ```
+  </Step>
+  
+  <Step title="Apply Changes">
+    ```bash
+    $ tsctl apply
+    Loading config...
+    ✓ Config loaded
+    Building plan...
+    ✓ Plan built
+
+    Typesense Plan:
+
+      + collection.products (create)
+      + alias.products_live (create)
+
+    Summary:
+      2 to create, 0 to update, 0 to delete, 0 unchanged
+
+    Do you want to apply these changes? (yes/no): yes
+
+    Applying 2 changes...
+
+    ✓ + collection.products
+    ✓ + alias.products_live
+
+    State saved.
+
+    Apply complete:
+      2 applied
+    ```
+  </Step>
+  
+  <Step title="Make a Change">
+    ```typescript Update tsctl.config.ts
+    export default defineConfig({
+      collections: [
+        {
+          name: "products",
+          fields: [
+            { name: "name", type: "string" },
+            { name: "price", type: "float" },
+            { name: "category", type: "string", facet: true },
+            { name: "tags", type: "string[]", facet: true }, // Added
+          ],
+          default_sorting_field: "created_at",
+        },
+      ],
+      // ... aliases unchanged
+    });
+    ```
+  </Step>
+  
+  <Step title="Plan the Update">
+    ```bash
+    $ tsctl plan
+    Loading config...
+    ✓ Config loaded
+    Building plan...
+    ✓ Plan built
+
+    Typesense Plan:
+
+      ~ collection.products (update)
+          "fields": [
+            { "name": "name", "type": "string" },
+            { "name": "price", "type": "float" },
+            { "name": "category", "type": "string", "facet": true },
+          + { "name": "tags", "type": "string[]", "facet": true }
+          ]
+
+        alias.products_live (no changes)
+
+    Summary:
+      0 to create, 1 to update, 0 to delete, 1 unchanged
+    ```
+  </Step>
+  
+  <Step title="Apply the Update">
+    ```bash
+    $ tsctl apply --yes
+    Loading config...
+    ✓ Config loaded
+    Building plan...
+    ✓ Plan built
+
+    Typesense Plan:
+      ~ collection.products (update)
+
+    Summary:
+      0 to create, 1 to update, 0 to delete, 1 unchanged
+
+    Applying 1 changes...
+
+    ✓ ~ collection.products
+
+    State saved.
+
+    Apply complete:
+      1 applied
+    ```
+  </Step>
+</Steps>
+
+## Update vs Replace
+
+Some changes can be applied in-place, while others require resource replacement:
+
+### In-place Updates
+
+These changes are applied without deleting the resource:
+
+- **Collections**: Adding fields (non-breaking)
+- **Aliases**: Changing target collection
+- **Synonyms**: Updating synonym list
+- **Overrides**: Changing rules or curations
+- **Analytics Rules**: Updating parameters
+
+### Replacement (Delete + Create)
+
+These changes require deleting and recreating:
+
+- **Collections**: Removing fields, changing field types (breaking changes)
+- **API Keys**: Any change (API keys are immutable)
+
+<Warning>
+**Breaking collection changes** will delete and recreate the collection, **losing all data**. Use [blue-green migrations](/advanced/blue-green-migrations) for zero-downtime updates.
+</Warning>
+
+## Idempotency
+
+The plan-apply workflow is **idempotent** - running it multiple times with the same configuration produces the same result:
+
+```bash
+# First apply creates resources
+$ tsctl apply
+Applying 2 changes...
+✓ + collection.products
+✓ + alias.products_live
+
+# Second apply with same config shows no changes
+$ tsctl apply
+No changes to apply.
+```
+
+Idempotency is ensured by:
+1. **Checksums** - Detect configuration changes
+2. **Normalization** - Ignore computed fields and ordering
+3. **State tracking** - Remember what was applied
+
+## Workflow Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always run plan before apply">
+    Never run `apply --yes` without reviewing the plan first:
+    
+    ```bash
+    # Good: Review first
+    tsctl plan
+    # Review output, then:
+    tsctl apply
+    
+    # Risky: Blind apply
+    tsctl apply --yes  # Use only in automation
+    ```
+  </Accordion>
+  
+  <Accordion title="Use version control">
+    Keep your configuration in Git:
+    
+    ```bash
+    git add tsctl.config.ts
+    git commit -m "Add tags field to products collection"
+    git push
+    ```
+    
+    This provides:
+    - Change history
+    - Code review
+    - Rollback capability
+  </Accordion>
+  
+  <Accordion title="Test in staging first">
+    Use environments to test changes:
+    
+    ```bash
+    # Test in staging
+    tsctl apply --env staging
+    
+    # After verification, apply to production
+    tsctl apply --env production
+    ```
+  </Accordion>
+  
+  <Accordion title="Check for drift regularly">
+    Detect manual changes:
+    
+    ```bash
+    tsctl drift
+    ```
+    
+    In CI/CD:
+    ```bash
+    # Exit code 1 if drift detected
+    tsctl drift --json > drift-report.json
+    ```
+  </Accordion>
+  
+  <Accordion title="Save plans for audit">
+    Keep a record of changes:
+    
+    ```bash
+    tsctl plan --out "plans/$(date +%Y%m%d-%H%M%S).json"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Comparison with Other Tools
+
+### Terraform
+
+```hcl Terraform workflow
+# Preview changes
+terraform plan
+
+# Apply changes
+terraform apply
+```
+
+```bash tsctl workflow (same pattern)
+# Preview changes
+tsctl plan
+
+# Apply changes
+tsctl apply
+```
+
+tsctl follows the same workflow as Terraform but optimized for Typesense.
+
+### Pulumi
+
+```bash Pulumi workflow
+# Preview changes
+pulumi preview
+
+# Apply changes
+pulumi up
+```
+
+Similar workflow, different terminology.
+
+### Direct API Calls
+
+```bash Without tsctl (manual, error-prone)
+curl -X POST "http://localhost:8108/collections" \
+  -H "X-TYPESENSE-API-KEY: xyz" \
+  -d '{"name":"products","fields":[...]}'
+
+# No preview, no safety net, no state tracking
+```
+
+With tsctl:
+- Preview before applying
+- Automatic state management
+- Change detection
+- Rollback capability
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Commands Reference" icon="terminal" href="/commands/plan">
+    Detailed reference for plan and apply commands
+  </Card>
+  
+  <Card title="Drift Detection" icon="binoculars" href="/advanced/drift-detection">
+    Learn about detecting and handling configuration drift
+  </Card>
+  
+  <Card title="Blue-Green Migrations" icon="arrows-rotate" href="/advanced/blue-green-migrations">
+    Zero-downtime collection updates
+  </Card>
+  
+  <Card title="CI/CD Integration" icon="gears" href="/advanced/ci-cd-integration">
+    Automate tsctl in your deployment pipeline
+  </Card>
+</CardGroup>

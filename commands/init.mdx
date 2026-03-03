@@ -1,0 +1,179 @@
+---
+title: "tsctl init"
+description: "Initialize a new tsctl project with configuration and environment files"
+---
+
+## Overview
+
+The `init` command scaffolds a new tsctl project by creating a sample configuration file, environment files, and testing the connection to your Typesense instance.
+
+## Syntax
+
+```bash
+tsctl init [options]
+```
+
+## Options
+
+<ParamField path="--force" type="boolean" default="false">
+  Overwrite existing config file if one already exists. Without this flag, the command will abort if `tsctl.config.ts` is found.
+</ParamField>
+
+<ParamField path="-f" type="boolean" default="false">
+  Short alias for `--force`.
+</ParamField>
+
+<ParamField path="--with-environments" type="boolean" default="false">
+  Create example environment files for development, staging, and production. This generates `.env.development`, `.env.staging`, and `.env.production` with placeholder values.
+</ParamField>
+
+<ParamField path="--env" type="string">
+  Environment to use (loads `.env.<environment>`). This is a global option available on all tsctl commands.
+</ParamField>
+
+## Behavior
+
+When you run `tsctl init`, the command:
+
+1. **Creates `tsctl.config.ts`** - A sample configuration file with a `products` collection, including:
+   - Multiple field types (string, float, bool, int64, arrays)
+   - Faceted fields for filtering
+   - Default sorting configuration
+   - An example alias pointing to the collection
+
+2. **Creates `.env`** - Base environment file with Typesense connection settings:
+   - `TYPESENSE_HOST` (defaults to localhost)
+   - `TYPESENSE_PORT` (defaults to 8108)
+   - `TYPESENSE_PROTOCOL` (defaults to http)
+   - `TYPESENSE_API_KEY` (placeholder)
+
+3. **Creates environment-specific files** (if `--with-environments` is used):
+   - `.env.development` - Local development settings
+   - `.env.staging` - Staging environment settings
+   - `.env.production` - Production environment settings
+
+4. **Tests the connection** - Attempts to connect to Typesense using the credentials in `.env`
+
+## Examples
+
+### Basic initialization
+
+```bash
+tsctl init
+```
+
+**Output:**
+```
+Initializing tsctl project...
+
+✓ Created /path/to/project/tsctl.config.ts
+✓ Created /path/to/project/.env
+  Update TYPESENSE_API_KEY with your actual API key
+✓ Connected to Typesense
+
+✓ Project initialized
+
+Next steps:
+  1. Update .env with your Typesense credentials
+  2. Edit tsctl.config.ts to define your schema
+  3. Run 'tsctl plan' to see what will be created
+  4. Run 'tsctl apply' to apply changes
+```
+
+### Initialize with environment files
+
+```bash
+tsctl init --with-environments
+```
+
+**Output:**
+```
+Initializing tsctl project...
+
+✓ Created /path/to/project/tsctl.config.ts
+✓ Created /path/to/project/.env
+  Update TYPESENSE_API_KEY with your actual API key
+✓ Created .env.development
+✓ Created .env.staging
+✓ Created .env.production
+
+  Use --env flag to switch environments:
+    tsctl plan --env production
+    tsctl apply --env staging
+
+✓ Connected to Typesense
+
+✓ Project initialized
+
+Next steps:
+  1. Update .env with your Typesense credentials
+  2. Edit tsctl.config.ts to define your schema
+  3. Run 'tsctl plan' to see what will be created
+  4. Run 'tsctl apply' to apply changes
+```
+
+### Force overwrite existing config
+
+```bash
+tsctl init --force
+```
+
+**Use case:** Regenerate the sample configuration when you want to start fresh.
+
+## Use Cases
+
+<AccordionGroup>
+  <Accordion title="Starting a new project">
+    Use `tsctl init` to quickly scaffold a new project with all necessary files. Edit the generated `tsctl.config.ts` to match your schema requirements.
+  </Accordion>
+
+  <Accordion title="Multi-environment setup">
+    Use `tsctl init --with-environments` when managing multiple environments (dev, staging, prod). Each environment gets its own `.env` file with appropriate connection settings.
+  </Accordion>
+
+  <Accordion title="Resetting configuration">
+    Use `tsctl init --force` to regenerate the sample configuration file if you want to start over or restore the default template.
+  </Accordion>
+</AccordionGroup>
+
+## Generated Config Example
+
+The generated `tsctl.config.ts` includes:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "products",
+      fields: [
+        { name: "name", type: "string" },
+        { name: "description", type: "string", optional: true },
+        { name: "price", type: "float" },
+        { name: "category", type: "string", facet: true },
+        { name: "tags", type: "string[]", facet: true, optional: true },
+        { name: "in_stock", type: "bool", facet: true },
+        { name: "created_at", type: "int64" },
+      ],
+      default_sorting_field: "created_at",
+    },
+  ],
+  aliases: [
+    {
+      name: "products_live",
+      collection: "products",
+    },
+  ],
+});
+```
+
+## Next Steps
+
+After initialization:
+
+1. Update the API key in your `.env` file
+2. Modify `tsctl.config.ts` to define your actual schema
+3. Run [`tsctl validate`](/commands/validate) to verify your configuration
+4. Run [`tsctl plan`](/commands/plan) to preview changes
+5. Run [`tsctl apply`](/commands/apply) to create resources

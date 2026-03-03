@@ -1,0 +1,251 @@
+---
+title: "tsctl plan"
+description: "Preview changes that will be made to your Typesense infrastructure"
+---
+
+## Overview
+
+The `plan` command compares your configuration file against the current state in Typesense and shows what resources will be created, updated, or deleted. This is similar to Terraform's plan command.
+
+## Syntax
+
+```bash
+tsctl plan [options]
+```
+
+## Options
+
+<ParamField path="--config" type="string">
+  Path to config file. If not specified, tsctl will search for `tsctl.config.ts`, `tsctl.config.js`, or `tsctl.config.json` in the current directory.
+</ParamField>
+
+<ParamField path="-c" type="string">
+  Short alias for `--config`.
+</ParamField>
+
+<ParamField path="--out" type="string">
+  Save the execution plan to a file as JSON. This file can be used for auditing or debugging.
+</ParamField>
+
+<ParamField path="-o" type="string">
+  Short alias for `--out`.
+</ParamField>
+
+<ParamField path="--env" type="string">
+  Environment to use (loads `.env.<environment>`). Critical for planning changes against the correct Typesense instance.
+</ParamField>
+
+## Behavior
+
+The plan command:
+
+1. **Connects to Typesense** - Uses credentials from your environment
+2. **Loads current state** - Retrieves the state stored in Typesense
+3. **Loads your config** - Parses your configuration file
+4. **Computes the diff** - Determines what needs to be created, updated, or deleted
+5. **Displays the plan** - Shows a color-coded summary of changes
+6. **Saves the plan** (optional) - Writes the full plan to a JSON file
+
+## Examples
+
+### Basic plan
+
+```bash
+tsctl plan
+```
+
+**Output:**
+```
+✓ Config loaded
+✓ Plan built
+
+Plan: 3 to add, 1 to change, 0 to destroy
+
+Changes:
+
+  + collection.products
+      7 fields, default_sorting_field: created_at
+
+  + alias.products_live
+      → products
+
+  ~ collection.users
+      + field: last_login (int64)
+      - field: signup_date
+
+  + synonym.product_terms (products)
+      3 synonyms
+```
+
+### Plan for specific environment
+
+```bash
+tsctl plan --env production
+```
+
+**Output:**
+```
+Using environment: production
+✓ Config loaded
+✓ Plan built
+
+Plan: 0 to add, 0 to change, 0 to destroy
+
+No changes. Infrastructure matches your configuration.
+```
+
+### Save plan to file
+
+```bash
+tsctl plan --out plan.json
+```
+
+**Output:**
+```
+✓ Config loaded
+✓ Plan built
+
+Plan: 2 to add, 0 to change, 0 to destroy
+
+Changes:
+
+  + collection.products
+      7 fields, default_sorting_field: created_at
+
+  + alias.products_live
+      → products
+
+Plan saved to /path/to/plan.json
+```
+
+### Plan with custom config
+
+```bash
+tsctl plan --config ./configs/new-schema.config.ts
+```
+
+## Understanding Plan Output
+
+### Change Symbols
+
+- `+` **Create** - Resource will be created
+- `~` **Update** - Resource will be modified
+- `-` **Delete** - Resource will be removed
+
+### Resource Types
+
+The plan shows changes for each resource type:
+
+```
++ collection.products          # New collection
+~ collection.users             # Modified collection
+- collection.old_data          # Deleted collection
++ alias.products_live          # New alias
+~ alias.users_live             # Updated alias
++ synonym.terms (products)     # New synonym
++ override.featured (products) # New override
++ apikey.search_only           # New API key
+```
+
+### Field-level Changes
+
+For collections, the plan shows field-level modifications:
+
+```
+~ collection.users
+    + field: last_login (int64, optional)    # New field
+    ~ field: email (string → string, index: true)  # Modified field
+    - field: old_field                       # Removed field
+```
+
+### Summary Line
+
+```
+Plan: 3 to add, 1 to change, 0 to destroy
+       ↑         ↑           ↑
+    Create    Update      Delete
+```
+
+## Use Cases
+
+<AccordionGroup>
+  <Accordion title="Pre-deployment review">
+    Always run `plan` before `apply` to review changes:
+    
+    ```bash
+    tsctl plan --env production
+    # Review output carefully
+    tsctl apply --env production
+    ```
+  </Accordion>
+
+  <Accordion title="CI/CD integration">
+    Save plans in CI for auditing and approval workflows:
+    
+    ```bash
+    # CI pipeline
+    tsctl plan --env staging --out plan-staging.json
+    # Upload plan-staging.json as artifact
+    ```
+  </Accordion>
+
+  <Accordion title="Schema validation">
+    Test configuration changes without applying them:
+    
+    ```bash
+    # Create a test config
+    tsctl plan --config test-schema.config.ts
+    # Review the plan, iterate on config
+    ```
+  </Accordion>
+
+  <Accordion title="Multi-environment comparison">
+    Compare what would change across environments:
+    
+    ```bash
+    tsctl plan --env development --out plan-dev.json
+    tsctl plan --env staging --out plan-staging.json
+    tsctl plan --env production --out plan-prod.json
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Plan JSON Structure
+
+When using `--out`, the plan is saved as JSON:
+
+```json
+{
+  "hasChanges": true,
+  "toCreate": [
+    {
+      "type": "collection",
+      "identifier": { "type": "collection", "name": "products" },
+      "config": { /* collection config */ }
+    }
+  ],
+  "toUpdate": [
+    {
+      "type": "collection",
+      "identifier": { "type": "collection", "name": "users" },
+      "current": { /* current config */ },
+      "desired": { /* desired config */ },
+      "changes": ["field.last_login added"]
+    }
+  ],
+  "toDelete": []
+}
+```
+
+## Exit Codes
+
+- `0` - Success (plan completed)
+- `1` - Error (connection failed, config invalid, etc.)
+
+## Next Steps
+
+After reviewing the plan:
+
+1. Run [`tsctl apply`](/commands/apply) to execute the changes
+2. Use `--yes` flag on apply for automation
+3. Save important plans with `--out` for audit trails

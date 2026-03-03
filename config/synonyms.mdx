@@ -1,0 +1,419 @@
+---
+title: Synonyms
+description: SynonymConfig and SynonymSetConfig type reference for configuring search synonyms
+---
+
+## Overview
+
+Typesense supports two approaches to synonym management:
+
+1. **Legacy per-collection synonyms** (`SynonymConfig`) - For Typesense < 30.0
+2. **Global synonym sets** (`SynonymSetConfig`) - For Typesense 30.0+, reusable across collections
+
+## SynonymConfig (Legacy)
+
+Per-collection synonyms for Typesense versions before 30.0.
+
+### Properties
+
+<ParamField path="id" type="string" required>
+  Unique identifier for the synonym within the collection.
+
+  ```typescript
+  id: "smartphone-synonyms"
+  ```
+</ParamField>
+
+<ParamField path="collection" type="string" required>
+  Name of the collection this synonym applies to.
+
+  ```typescript
+  collection: "products"
+  ```
+</ParamField>
+
+<ParamField path="synonyms" type="string[]" optional>
+  Array of equivalent terms (multi-way synonyms).
+
+  ```typescript
+  synonyms: ["phone", "mobile", "smartphone", "cell phone"]
+  ```
+
+  Either `synonyms` or `root` is required.
+</ParamField>
+
+<ParamField path="root" type="string" optional>
+  Root word for one-way synonyms.
+
+  ```typescript
+  root: "television"
+  ```
+
+  When set, all terms in `synonyms` will match searches for `root`, but not vice versa.
+</ParamField>
+
+<ParamField path="symbols_to_index" type="string[]" optional>
+  Special symbols to preserve in synonym matching.
+
+  ```typescript
+  symbols_to_index: ["+", "#"]
+  ```
+</ParamField>
+
+<ParamField path="locale" type="string" optional>
+  Locale for language-specific synonym matching.
+
+  ```typescript
+  locale: "en"
+  ```
+</ParamField>
+
+### Example: Multi-Way Synonyms
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  synonyms: [
+    {
+      id: "smartphone-synonyms",
+      collection: "products",
+      synonyms: ["phone", "mobile", "smartphone", "cellphone"],
+    },
+    {
+      id: "laptop-synonyms",
+      collection: "products",
+      synonyms: ["laptop", "notebook", "portable computer"],
+    },
+  ],
+});
+```
+
+### Example: One-Way Synonyms
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  synonyms: [
+    {
+      id: "tv-synonym",
+      collection: "products",
+      root: "television",
+      synonyms: ["tv", "telly"],
+    },
+  ],
+});
+```
+
+Searching for "television" will match documents with "tv" or "telly", but searching for "tv" will only match "tv".
+
+## SynonymSetConfig (Typesense 30.0+)
+
+Global synonym sets that can be reused across multiple collections.
+
+### Properties
+
+<ParamField path="name" type="string" required>
+  Unique name for the synonym set.
+
+  ```typescript
+  name: "common-synonyms"
+  ```
+</ParamField>
+
+<ParamField path="items" type="SynonymSetItem[]" required>
+  Array of synonym definitions in this set.
+
+  ```typescript
+  items: [
+    {
+      id: "smartphone",
+      synonyms: ["phone", "mobile", "smartphone"],
+    },
+  ]
+  ```
+</ParamField>
+
+### SynonymSetItem Properties
+
+<ParamField path="id" type="string" required>
+  Unique identifier within the synonym set.
+
+  ```typescript
+  id: "smartphone"
+  ```
+</ParamField>
+
+<ParamField path="synonyms" type="string[]" optional>
+  Array of equivalent terms.
+
+  ```typescript
+  synonyms: ["phone", "mobile", "smartphone"]
+  ```
+</ParamField>
+
+<ParamField path="root" type="string" optional>
+  Root word for one-way synonyms.
+
+  ```typescript
+  root: "television"
+  ```
+</ParamField>
+
+<ParamField path="symbols_to_index" type="string[]" optional>
+  Special symbols to preserve in synonym matching.
+
+  ```typescript
+  symbols_to_index: ["#"]
+  ```
+</ParamField>
+
+<ParamField path="locale" type="string" optional>
+  Locale for language-specific synonym matching.
+
+  ```typescript
+  locale: "en"
+  ```
+</ParamField>
+
+### Example: Global Synonym Sets
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  synonymSets: [
+    {
+      name: "common-tech-synonyms",
+      items: [
+        {
+          id: "smartphone",
+          synonyms: ["phone", "mobile", "smartphone", "cellphone"],
+        },
+        {
+          id: "laptop",
+          synonyms: ["laptop", "notebook", "portable computer"],
+        },
+        {
+          id: "tv",
+          root: "television",
+          synonyms: ["tv", "telly"],
+        },
+      ],
+    },
+    {
+      name: "product-abbreviations",
+      items: [
+        {
+          id: "ac",
+          root: "air conditioner",
+          synonyms: ["ac", "a/c"],
+        },
+      ],
+    },
+  ],
+  collections: [
+    {
+      name: "products",
+      fields: [...],
+      synonym_sets: ["common-tech-synonyms", "product-abbreviations"],
+    },
+    {
+      name: "articles",
+      fields: [...],
+      synonym_sets: ["common-tech-synonyms"],
+    },
+  ],
+});
+```
+
+## Synonym Types
+
+### Multi-Way Synonyms
+
+All terms are equivalent and match each other:
+
+```typescript
+{
+  id: "size-synonyms",
+  synonyms: ["big", "large", "huge", "enormous"],
+}
+```
+
+Searching for any term matches documents containing any other term.
+
+### One-Way Synonyms
+
+Synonyms point to a root word:
+
+```typescript
+{
+  id: "abbreviation",
+  root: "United States",
+  synonyms: ["USA", "US", "U.S.A.", "U.S."],
+}
+```
+
+- Searching for "United States" matches documents with "USA", "US", etc.
+- Searching for "USA" only matches documents with "USA"
+
+## Best Practices
+
+### 1. Use Global Synonym Sets (Typesense 30.0+)
+
+**Good:**
+```typescript
+synonymSets: [
+  {
+    name: "common-synonyms",
+    items: [...],
+  },
+],
+collections: [
+  {
+    name: "products",
+    synonym_sets: ["common-synonyms"],
+  },
+  {
+    name: "articles",
+    synonym_sets: ["common-synonyms"],
+  },
+]
+```
+
+**Avoid (Legacy):**
+```typescript
+synonyms: [
+  { id: "syn1", collection: "products", synonyms: [...] },
+  { id: "syn1", collection: "articles", synonyms: [...] },
+]
+```
+
+### 2. Organize by Domain
+
+```typescript
+synonymSets: [
+  {
+    name: "general-synonyms",
+    items: [/* common words */],
+  },
+  {
+    name: "tech-synonyms",
+    items: [/* technical terms */],
+  },
+  {
+    name: "brand-synonyms",
+    items: [/* brand names */],
+  },
+]
+```
+
+### 3. Consider Query Patterns
+
+Analyze search queries to identify common synonym patterns:
+
+```typescript
+{
+  name: "search-patterns",
+  items: [
+    {
+      id: "buy-synonyms",
+      synonyms: ["buy", "purchase", "order", "get"],
+    },
+    {
+      id: "cheap-synonyms",
+      synonyms: ["cheap", "affordable", "budget", "inexpensive"],
+    },
+  ],
+}
+```
+
+### 4. Handle Special Characters
+
+```typescript
+{
+  id: "hashtag-synonyms",
+  synonyms: ["csharp", "c#"],
+  symbols_to_index: ["#"],
+}
+```
+
+### 5. Use Locale for Multi-Language
+
+```typescript
+synonymSets: [
+  {
+    name: "english-synonyms",
+    items: [
+      {
+        id: "color",
+        synonyms: ["color", "colour"],
+        locale: "en",
+      },
+    ],
+  },
+  {
+    name: "spanish-synonyms",
+    items: [
+      {
+        id: "ordenador",
+        synonyms: ["ordenador", "computadora"],
+        locale: "es",
+      },
+    ],
+  },
+]
+```
+
+## Migration: Legacy to Global Sets
+
+### Before (Legacy)
+
+```typescript
+synonyms: [
+  {
+    id: "syn1",
+    collection: "products",
+    synonyms: ["phone", "mobile"],
+  },
+  {
+    id: "syn1",
+    collection: "articles",
+    synonyms: ["phone", "mobile"],
+  },
+]
+```
+
+### After (Global Sets)
+
+```typescript
+synonymSets: [
+  {
+    name: "common-synonyms",
+    items: [
+      {
+        id: "phone",
+        synonyms: ["phone", "mobile"],
+      },
+    ],
+  },
+],
+collections: [
+  {
+    name: "products",
+    fields: [...],
+    synonym_sets: ["common-synonyms"],
+  },
+  {
+    name: "articles",
+    fields: [...],
+    synonym_sets: ["common-synonyms"],
+  },
+]
+```
+
+## Related
+
+- [Collections Reference](/config/collections)
+- [Search Optimization Guide](/config/synonyms)

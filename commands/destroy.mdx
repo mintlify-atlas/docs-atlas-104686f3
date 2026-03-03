@@ -1,0 +1,257 @@
+---
+title: "tsctl destroy"
+description: "Destroy all managed Typesense resources tracked by tsctl"
+---
+
+## Overview
+
+The `destroy` command removes all resources that tsctl is managing (tracked in state). This is a destructive operation that deletes collections, aliases, synonyms, overrides, and API keys.
+
+<Warning>
+  This command **deletes all managed resources and their data**. Use with extreme caution, especially in production environments.
+</Warning>
+
+## Syntax
+
+```bash
+tsctl destroy [options]
+```
+
+## Options
+
+<ParamField path="--yes" type="boolean" default="false">
+  Auto-approve destruction without prompting for confirmation. By default, you must type "destroy" to confirm.
+</ParamField>
+
+<ParamField path="-y" type="boolean" default="false">
+  Short alias for `--yes`.
+</ParamField>
+
+<ParamField path="--env" type="string">
+  Environment to use (loads `.env.<environment>`). **Critical** - ensures you destroy resources from the intended environment.
+</ParamField>
+
+## Behavior
+
+The destroy command:
+
+1. **Loads state** - Retrieves the list of managed resources from Typesense
+2. **Shows destruction plan** - Lists all resources that will be deleted
+3. **Prompts for confirmation** - Requires typing "destroy" to proceed (unless `--yes` is used)
+4. **Deletes resources** - Removes all resources in the correct dependency order
+5. **Clears state** - Removes the state file from Typesense
+
+## Examples
+
+### Interactive destroy
+
+```bash
+tsctl destroy
+```
+
+**Output:**
+```
+⚠️  DESTRUCTION PLAN
+
+The following resources will be destroyed:
+
+  - collection.products
+  - collection.users
+  - alias.products_live
+  - alias.users_live
+  - synonym.product_terms (products)
+  - override.featured_products (products)
+  - apikey.search_only
+
+Type 'destroy' to confirm: destroy
+
+Applying changes...
+
+✓ Deleted override 'featured_products' from collection 'products'
+✓ Deleted synonym 'product_terms' from collection 'products'
+✓ Deleted alias 'products_live'
+✓ Deleted alias 'users_live'
+✓ Deleted collection 'products'
+✓ Deleted collection 'users'
+✓ Deleted API key 'search_only'
+
+✓ All managed resources destroyed.
+```
+
+### Auto-approve destroy
+
+```bash
+tsctl destroy --yes
+```
+
+**Output:**
+```
+⚠️  DESTRUCTION PLAN
+
+The following resources will be destroyed:
+
+  - collection.products
+  - alias.products_live
+
+Applying changes...
+
+✓ Deleted alias 'products_live'
+✓ Deleted collection 'products'
+
+✓ All managed resources destroyed.
+```
+
+### Destroy specific environment
+
+```bash
+tsctl destroy --env staging
+```
+
+**Use case:** Clean up a staging environment while keeping production intact.
+
+### Cancel destroy
+
+```bash
+tsctl destroy
+```
+
+**Output:**
+```
+⚠️  DESTRUCTION PLAN
+
+The following resources will be destroyed:
+
+  - collection.products
+  - alias.products_live
+
+Type 'destroy' to confirm: no
+
+Destroy cancelled.
+```
+
+### No resources to destroy
+
+```bash
+tsctl destroy
+```
+
+**Output:**
+```
+No resources to destroy.
+```
+
+## Deletion Order
+
+Resources are deleted in reverse dependency order to avoid errors:
+
+1. **Overrides** - Deleted first (depend on collections)
+2. **Analytics Rules** - Search analytics configurations
+3. **Synonyms** - Synonym definitions
+4. **Synonym Sets** - Multi-collection synonyms
+5. **Aliases** - Collection aliases
+6. **API Keys** - Access keys (reference collections)
+7. **Collections** - Deleted last (other resources depend on them)
+
+## Use Cases
+
+<AccordionGroup>
+  <Accordion title="Environment cleanup">
+    Remove all resources from a development or staging environment:
+    
+    ```bash
+    tsctl destroy --env development --yes
+    ```
+  </Accordion>
+
+  <Accordion title="Testing workflow">
+    Clean up after running integration tests:
+    
+    ```bash
+    # In test teardown
+    tsctl apply --env test --yes
+    # Run tests
+    tsctl destroy --env test --yes
+    ```
+  </Accordion>
+
+  <Accordion title="Start fresh">
+    Remove all resources to start over:
+    
+    ```bash
+    tsctl destroy
+    # Edit tsctl.config.ts with new schema
+    tsctl apply
+    ```
+  </Accordion>
+
+  <Accordion title="Decommission project">
+    Completely remove a project's Typesense resources:
+    
+    ```bash
+    tsctl destroy --env production
+    # Confirm carefully!
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Safety Mechanisms
+
+<Warning>
+  **Multiple safety checks prevent accidental destruction:**
+  
+  1. **Explicit confirmation** - Must type "destroy" (not just "yes")
+  2. **Resource listing** - Shows exactly what will be deleted
+  3. **No default --yes** - Requires explicit flag for automation
+  4. **Environment awareness** - Use `--env` to target specific environments
+</Warning>
+
+## What Happens to Data
+
+<Warning>
+  **All data is permanently deleted:**
+  
+  - Collection documents are lost
+  - Collection schemas are removed
+  - Aliases are deleted
+  - Synonym definitions are removed
+  - Override rules are deleted
+  - API keys are revoked
+  - State file is cleared
+  
+  **There is no recovery** - back up important data before destroying!
+</Warning>
+
+## Unmanaged Resources
+
+The `destroy` command only removes resources tracked in tsctl state. Resources created outside of tsctl are **not affected**.
+
+To destroy everything:
+```bash
+# First destroy managed resources
+tsctl destroy --yes
+
+# Then manually delete unmanaged resources
+# via Typesense API or dashboard
+```
+
+## Comparison with State Clear
+
+| Command | Resources | State | Data |
+|---------|-----------|-------|------|
+| `destroy` | Deleted | Cleared | **Lost** |
+| `state clear` | Kept | Cleared | Kept |
+
+Use [`state clear`](/commands/state#clear) if you only want to clear state without deleting resources.
+
+## Exit Codes
+
+- `0` - Success (all resources destroyed)
+- `1` - Error (connection failed, deletion failed, user cancelled)
+
+## Next Steps
+
+After destroying resources:
+
+1. Run [`tsctl init`](/commands/init) to start a new project
+2. Update your config and run [`tsctl apply`](/commands/apply) to recreate resources
+3. Re-index your data if needed

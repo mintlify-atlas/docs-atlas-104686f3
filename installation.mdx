@@ -1,0 +1,238 @@
+---
+title: Installation
+description: Install tsctl and get ready to manage your Typesense infrastructure
+---
+
+## Prerequisites
+
+Before installing tsctl, ensure you have:
+
+- **Node.js 18+** or **Bun** installed
+- **Typesense instance** running (local or cloud)
+- **API key** with admin permissions
+
+<Note>
+  While tsctl is built with Bun, it works with any Node.js runtime. Use your preferred package manager.
+</Note>
+
+## Installation Methods
+
+### Global Installation
+
+Install tsctl globally to use it across all your projects:
+
+<CodeGroup>
+
+```bash npm
+npm install -g tsctl
+```
+
+```bash pnpm
+pnpm add -g tsctl
+```
+
+```bash yarn
+yarn global add tsctl
+```
+
+```bash bun
+bun add -g tsctl
+```
+
+</CodeGroup>
+
+Verify the installation:
+
+```bash
+tsctl --version
+```
+
+### Use with npx/bunx (No Installation)
+
+Run tsctl without installing it globally:
+
+<CodeGroup>
+
+```bash npx
+npx tsctl init
+npx tsctl plan
+npx tsctl apply
+```
+
+```bash bunx
+bunx tsctl init
+bunx tsctl plan
+bunx tsctl apply
+```
+
+</CodeGroup>
+
+<Tip>
+  Using `npx` or `bunx` is perfect for CI/CD pipelines or trying tsctl without a permanent installation.
+</Tip>
+
+### Project-Specific Installation
+
+Add tsctl as a dev dependency to your project:
+
+<CodeGroup>
+
+```bash npm
+npm install --save-dev tsctl
+```
+
+```bash pnpm
+pnpm add -D tsctl
+```
+
+```bash yarn
+yarn add --dev tsctl
+```
+
+```bash bun
+bun add --dev tsctl
+```
+
+</CodeGroup>
+
+Then use it via package.json scripts:
+
+```json package.json
+{
+  "scripts": {
+    "ts:plan": "tsctl plan",
+    "ts:apply": "tsctl apply",
+    "ts:validate": "tsctl validate"
+  }
+}
+```
+
+## Next Steps
+
+Once installed, initialize your first tsctl project:
+
+```bash
+tsctl init
+```
+
+This creates:
+- `tsctl.config.ts` - Your infrastructure definition
+- `.env` - Connection settings for your Typesense instance
+
+<Card title="Quick Start Guide" icon="rocket" href="/quickstart">
+  Follow the quick start guide to create your first managed collection
+</Card>
+
+## System Requirements
+
+<AccordionGroup>
+  <Accordion title="Supported Operating Systems">
+    - **macOS** (Intel & Apple Silicon)
+    - **Linux** (x64)
+    - **Windows** (x64)
+
+    Pre-compiled binaries are available for all platforms in the [GitHub releases](https://github.com/akshitkrnagpal/tsctl/releases).
+  </Accordion>
+
+  <Accordion title="Typesense Compatibility">
+    tsctl works with:
+    - **Typesense 26.0+** for core features (collections, aliases, synonyms, overrides)
+    - **Typesense 30.0+** for global synonym sets
+    - **Typesense Cloud** fully supported
+
+    Legacy features (per-collection synonyms) work with older versions.
+  </Accordion>
+
+  <Accordion title="TypeScript Support">
+    When using TypeScript configuration files (`tsctl.config.ts`), you get:
+    - Full IntelliSense and autocomplete
+    - Type checking for field types and options
+    - Import validation with Zod schemas
+
+    Install TypeScript in your project for the best experience:
+    ```bash
+    npm install --save-dev typescript
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Command not found after installation">
+    If you get `tsctl: command not found` after global installation:
+
+    1. Check if npm global bin directory is in your PATH:
+       ```bash
+       npm config get prefix
+       ```
+
+    2. Add it to your PATH if needed:
+       ```bash
+       export PATH="$(npm config get prefix)/bin:$PATH"
+       ```
+
+    3. Or use `npx tsctl` instead of installing globally
+  </Accordion>
+
+  <Accordion title="Permission errors on macOS/Linux">
+    If you get permission errors during global installation:
+
+    ```bash
+    sudo npm install -g tsctl
+    ```
+
+    Or configure npm to use a different directory:
+    ```bash
+    mkdir ~/.npm-global
+    npm config set prefix '~/.npm-global'
+    export PATH="~/.npm-global/bin:$PATH"
+    ```
+  </Accordion>
+
+  <Accordion title="Module resolution errors">
+    If you see module resolution errors:
+
+    1. Ensure you're using Node.js 18 or higher:
+       ```bash
+       node --version
+       ```
+
+    2. Clear your package manager cache:
+       ```bash
+       npm cache clean --force
+       # or
+       pnpm store prune
+       # or
+       yarn cache clean
+       ```
+  </Accordion>
+</AccordionGroup>
+
+## Updating tsctl
+
+Keep tsctl up to date to get the latest features and bug fixes:
+
+<CodeGroup>
+
+```bash npm
+npm update -g tsctl
+```
+
+```bash pnpm
+pnpm update -g tsctl
+```
+
+```bash yarn
+yarn global upgrade tsctl
+```
+
+```bash bun
+bun update -g tsctl
+```
+
+</CodeGroup>
+
+<Warning>
+  Check the [changelog](https://github.com/akshitkrnagpal/tsctl/releases) before updating to ensure compatibility with your existing configuration.
+</Warning>

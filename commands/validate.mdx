@@ -1,0 +1,181 @@
+---
+title: "tsctl validate"
+description: "Validate your tsctl configuration file for syntax and schema errors"
+---
+
+## Overview
+
+The `validate` command checks your configuration file for errors and displays a summary of all defined resources. It does not connect to Typesense or check against live state.
+
+## Syntax
+
+```bash
+tsctl validate [options]
+```
+
+## Options
+
+<ParamField path="--config" type="string">
+  Path to config file. If not specified, tsctl will search for `tsctl.config.ts`, `tsctl.config.js`, or `tsctl.config.json` in the current directory.
+</ParamField>
+
+<ParamField path="-c" type="string">
+  Short alias for `--config`.
+</ParamField>
+
+<ParamField path="--env" type="string">
+  Environment to use (loads `.env.<environment>`). This is a global option available on all tsctl commands.
+</ParamField>
+
+## Behavior
+
+The validate command:
+
+1. **Locates the config file** - Searches for the configuration in the current directory or uses the path specified by `--config`
+2. **Parses the configuration** - Loads and validates the TypeScript/JavaScript/JSON config
+3. **Checks schema validity** - Ensures all required fields are present and types are correct
+4. **Displays a summary** - Shows counts and details of all defined resources
+
+## Examples
+
+### Validate default config
+
+```bash
+tsctl validate
+```
+
+**Output:**
+```
+✓ Config is valid
+
+Resources defined:
+  Collections: 2
+    - products (7 fields)
+    - users (5 fields)
+  Aliases: 2
+    - products_live → products
+    - users_live → users
+  Synonyms: 1
+    - product_synonyms (products) [3 terms]
+  Overrides: 1
+    - featured_products (products) [query: "featured"]
+  API Keys: 1
+    - Search-only key [products, users]
+```
+
+### Validate specific config file
+
+```bash
+tsctl validate --config ./configs/production.config.ts
+```
+
+### Validate with environment context
+
+```bash
+tsctl validate --env production
+```
+
+**Use case:** While `validate` doesn't connect to Typesense, using `--env` can be useful if your config file uses environment variables for dynamic values.
+
+## Resource Summary Details
+
+### Collections
+Shows the collection name and field count:
+```
+Collections: 2
+  - products (7 fields)
+  - users (5 fields)
+```
+
+### Aliases
+Shows the alias name and target collection:
+```
+Aliases: 2
+  - products_live → products
+  - users_live → users
+```
+
+### Synonyms
+Shows the synonym ID, collection, and type:
+```
+Synonyms: 2
+  - product_synonyms (products) [3 terms]
+  - brand_synonyms (products) [root: nike]
+```
+
+### Synonym Sets
+Shows synonym set details if defined in your config.
+
+### Overrides
+Shows the override ID, collection, and rule type:
+```
+Overrides: 1
+  - featured_products (products) [query: "featured"]
+  - category_filter (products) [filter: category:=electronics]
+```
+
+### Analytics Rules
+Shows analytics rule details if defined in your config.
+
+### API Keys
+Shows the description and allowed collections:
+```
+API Keys: 1
+  - Search-only key [products, users]
+```
+
+## Use Cases
+
+<AccordionGroup>
+  <Accordion title="Pre-deployment validation">
+    Run `tsctl validate` before applying changes to catch configuration errors early. This is especially useful in CI/CD pipelines.
+    
+    ```bash
+    # In CI/CD pipeline
+    tsctl validate || exit 1
+    tsctl plan
+    ```
+  </Accordion>
+
+  <Accordion title="Configuration review">
+    Use validate to get a quick overview of all resources defined in your config without connecting to Typesense:
+    
+    ```bash
+    tsctl validate --config ./new-schema.config.ts
+    ```
+  </Accordion>
+
+  <Accordion title="Multi-environment configs">
+    Validate environment-specific configurations:
+    
+    ```bash
+    tsctl validate --config configs/staging.config.ts
+    tsctl validate --config configs/production.config.ts
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Error Handling
+
+If validation fails, the command exits with code 1 and displays the error:
+
+```bash
+✗ Config validation failed
+
+Error: Missing required field 'name' in collection at index 0
+```
+
+Common validation errors:
+- Missing required fields (name, type, etc.)
+- Invalid field types
+- Malformed configuration structure
+- TypeScript syntax errors
+- Missing dependencies or imports
+
+## Next Steps
+
+After successful validation:
+
+1. Run [`tsctl plan`](/commands/plan) to see what changes will be made
+2. Run [`tsctl apply`](/commands/apply) to apply the configuration
+3. Use [`tsctl drift`](/commands/drift) to detect manual changes

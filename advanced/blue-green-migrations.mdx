@@ -1,0 +1,517 @@
+---
+title: "Blue/Green Migrations"
+description: "Zero-downtime schema migrations using blue/green deployment pattern"
+---
+
+## Overview
+
+Blue/green migrations enable zero-downtime collection schema updates by creating a new collection version, indexing data, switching an alias, and optionally cleaning up the old collection.
+
+This pattern is essential when:
+- Making breaking schema changes
+- Updating field types or configurations
+- Testing new collection settings before going live
+- Needing a rollback strategy
+
+## How It Works
+
+The blue/green migration process has four stages:
+
+1. **Create** - New versioned collection (e.g., `products_1706486400000`)
+2. **Index** - Populate the new collection with data
+3. **Switch** - Update alias to point to new collection
+4. **Cleanup** - Delete old collection (optional)
+
+Implementation is in `src/migrate/index.ts`.
+
+## Migration Workflow
+
+### Full Automated Migration
+
+Perform all steps in one command:
+
+```bash
+tsctl migrate -a products_live -c tsctl.config.ts
+```
+
+This will:
+1. Create new collection `products_<timestamp>`
+2. Wait for data indexing (you must handle this)
+3. Switch alias `products_live` to new collection
+4. Delete old collection
+
+<Warning>
+The automated migration assumes data is already indexed or indexing happens externally. You're responsible for copying data between collections.
+</Warning>
+
+### Step-by-Step Migration
+
+For more control, migrate in stages:
+
+#### Step 1: Create New Collection
+
+```bash
+tsctl migrate -a products_live -c tsctl.config.ts --create-only
+```
+
+Output:
+```
+Migration Plan:
+
+  Alias:              products_live
+  Current collection: products_1706486400000
+  New collection:     products_1706486500000
+
+Steps:
+
+  1. + Create new collection 'products_1706486500000'
+  2. → Switch alias 'products_live' to 'products_1706486500000'
+  3. - Delete old collection 'products_1706486400000'
+
+✓ Collection created. Index your data, then run:
+  tsctl migrate -a products_live -c tsctl.config.ts --switch-only
+```
+
+#### Step 2: Index Your Data
+
+Use your application's indexing process to populate the new collection:
+
+```typescript
+import Typesense from 'typesense';
+
+const client = new Typesense.Client({
+  nodes: [{ host: 'localhost', port: 8108, protocol: 'http' }],
+  apiKey: 'your-api-key',
+});
+
+// Get the new collection name from previous step
+const newCollection = 'products_1706486500000';
+
+// Import documents
+const documents = await fetchYourDocuments();
+await client.collections(newCollection).documents().import(documents);
+```
+
+#### Step 3: Switch Alias
+
+Once indexing is complete and verified:
+
+```bash
+tsctl migrate -a products_live -c tsctl.config.ts --switch-only
+```
+
+Output:
+```
+✓ Switched alias 'products_live' to 'products_1706486500000'
+
+✓ Migration complete. Old collection still exists for rollback.
+  To delete the old collection:
+  tsctl migrate -a products_live -c tsctl.config.ts --cleanup products_1706486400000
+```
+
+Your users now query through the alias and automatically get the new collection.
+
+#### Step 4: Cleanup Old Collection
+
+After verifying the migration succeeded:
+
+```bash
+tsctl migrate -a products_live -c tsctl.config.ts --cleanup products_1706486400000
+```
+
+## Migration Implementation
+
+### Collection Naming Convention
+
+Collections are versioned with Unix timestamps:
+
+```typescript
+export function generateVersionedName(baseName: string): string {
+  const timestamp = Date.now();
+  return `${baseName}_${timestamp}`;
+}
+```
+
+Example:
+- Base name: `products`
+- Generated: `products_1706486500123`
+
+The base name is extracted from your config:
+
+```typescript
+export function extractBaseName(name: string): string {
+  // Extract base name by removing _<timestamp> suffix
+  const match = name.match(/^(.+)_\d{13}$/);
+  return match ? match[1]! : name;
+}
+```
+
+### Migration Plan
+
+Before executing, tsctl generates a migration plan:
+
+```typescript
+export async function planMigration(
+  aliasName: string,
+  newCollectionConfig: CollectionConfig
+): Promise<MigrationPlan> {
+  const steps: MigrationStep[] = [];
+
+  // Get current alias target
+  const currentAlias = await getAlias(aliasName);
+  const currentCollection = currentAlias?.collection || null;
+
+  // Generate new collection name with timestamp
+  const baseName = extractBaseName(newCollectionConfig.name);
+  const newCollectionName = generateVersionedName(baseName);
+
+  // Step 1: Create new collection
+  steps.push({
+    action: "create_collection",
+    description: `Create new collection '${newCollectionName}'`,
+    target: newCollectionName,
+  });
+
+  // Step 2: Switch alias
+  steps.push({
+    action: "switch_alias",
+    description: `Switch alias '${aliasName}' to '${newCollectionName}'`,
+    target: aliasName,
+  });
+
+  // Step 3: Delete old collection (optional)
+  if (currentCollection) {
+    steps.push({
+      action: "delete_old_collection",
+      description: `Delete old collection '${currentCollection}'`,
+      target: currentCollection,
+    });
+  }
+
+  return { alias: aliasName, currentCollection, newCollection: newCollectionName, steps };
+}
+```
+
+### Migration Execution
+
+```typescript
+export async function executeMigration(
+  plan: MigrationPlan,
+  options: {
+    skipDelete?: boolean;
+    onStep?: (step: MigrationStep, index: number) => void;
+  } = {}
+): Promise<MigrationResult> {
+  const result: MigrationResult = {
+    success: true,
+    newCollectionName: plan.newCollection,
+    oldCollectionName: plan.currentCollection,
+    aliasName: plan.alias,
+    errors: [],
+  };
+
+  for (let i = 0; i < plan.steps.length; i++) {
+    const step = plan.steps[i]!;
+
+    // Skip delete step if requested
+    if (step.action === "delete_old_collection" && options.skipDelete) {
+      continue;
+    }
+
+    try {
+      await executeMigrationStep(plan, step);
+    } catch (error) {
+      result.success = false;
+      result.errors.push(`Step ${i + 1} failed: ${error.message}`);
+      break; // Stop on first error
+    }
+  }
+
+  return result;
+}
+```
+
+## Migration Options
+
+### Keep Old Collection (Rollback Safety)
+
+```bash
+tsctl migrate -a products_live -c tsctl.config.ts --skip-delete
+```
+
+Keeps the old collection for easy rollback. You can manually delete it later:
+
+```bash
+tsctl migrate -a products_live -c tsctl.config.ts --cleanup products_1706486400000
+```
+
+### Multi-Collection Configs
+
+If your config defines multiple collections, specify which one:
+
+```bash
+tsctl migrate -a products_live -c tsctl.config.ts --collection products
+```
+
+### Auto-Approve
+
+Skip confirmation prompts:
+
+```bash
+tsctl migrate -a products_live -c tsctl.config.ts -y
+```
+
+## Rollback Procedure
+
+If the migration has issues, rollback by switching the alias back:
+
+### Method 1: Switch to Previous Collection
+
+```bash
+# Find the old collection name
+tsctl state list
+
+# Manually switch alias using --switch-only
+# (You'll need to temporarily update your config to point to old collection)
+```
+
+### Method 2: Direct Alias Update
+
+Update your config to point to the old collection and apply:
+
+```typescript
+// tsctl.config.ts
+export default defineConfig({
+  aliases: [
+    {
+      name: "products_live",
+      collection: "products_1706486400000", // Old collection
+    },
+  ],
+});
+```
+
+```bash
+tsctl apply
+```
+
+### Method 3: Typesense API
+
+Direct rollback via API:
+
+```bash
+curl -X PUT \
+  'http://localhost:8108/aliases/products_live' \
+  -H 'X-TYPESENSE-API-KEY: your-api-key' \
+  -H 'Content-Type: application/json' \
+  -d '{"collection_name": "products_1706486400000"}'
+```
+
+## Data Indexing Strategies
+
+### Strategy 1: Bulk Import
+
+Export from old collection and import to new:
+
+```typescript
+const oldDocs = await client
+  .collections('products_1706486400000')
+  .documents()
+  .export();
+
+await client
+  .collections('products_1706486500000')
+  .documents()
+  .import(oldDocs);
+```
+
+### Strategy 2: Application Reindexing
+
+Trigger your application's full reindex:
+
+```bash
+# Create collection
+tsctl migrate -a products_live -c tsctl.config.ts --create-only
+
+# Run your reindexing job
+node scripts/reindex.js --collection products_1706486500000
+
+# Switch when ready
+tsctl migrate -a products_live -c tsctl.config.ts --switch-only
+```
+
+### Strategy 3: Dual-Write
+
+Write to both collections during migration:
+
+```typescript
+const newCollectionName = 'products_1706486500000';
+
+// Write to both
+await Promise.all([
+  client.collections('products_live').documents().upsert(doc),
+  client.collections(newCollectionName).documents().upsert(doc),
+]);
+```
+
+Then backfill historical data and switch.
+
+## Best Practices
+
+### 1. Test First
+
+Always test migrations in staging:
+
+```bash
+# Staging test
+tsctl migrate -a products_live -c tsctl.config.ts --env staging
+
+# Verify in staging
+tsctl drift --env staging
+
+# Production migration
+tsctl migrate -a products_live -c tsctl.config.ts --env production
+```
+
+### 2. Keep Old Collection
+
+Use `--skip-delete` initially for easy rollback:
+
+```bash
+tsctl migrate -a products_live -c tsctl.config.ts --skip-delete
+```
+
+Delete after 24-48 hours of stability:
+
+```bash
+tsctl migrate -a products_live -c tsctl.config.ts --cleanup products_old
+```
+
+### 3. Verify Data
+
+After indexing, verify document counts match:
+
+```typescript
+const oldCount = await client.collections('products_old').retrieve().num_documents;
+const newCount = await client.collections('products_new').retrieve().num_documents;
+
+if (oldCount !== newCount) {
+  console.error('Document count mismatch!');
+}
+```
+
+### 4. Monitor Performance
+
+Watch query performance after switching:
+
+```bash
+# Check alias target
+tsctl state list | grep products_live
+
+# Monitor application metrics
+# If performance degrades, rollback
+```
+
+### 5. Communicate Maintenance
+
+Even though it's zero-downtime, inform users:
+
+- Brief search quality differences during reindexing
+- Potential temporary inconsistencies with dual-write
+
+## CI/CD Integration
+
+Automate migrations in CI/CD:
+
+```yaml
+# .github/workflows/migrate-production.yml
+name: Production Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      alias:
+        description: 'Alias to migrate'
+        required: true
+        default: 'products_live'
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: oven-sh/setup-bun@v1
+      
+      - name: Install tsctl
+        run: bun install -g tsctl
+      
+      - name: Create New Collection
+        env:
+          TYPESENSE_HOST: ${{ secrets.PROD_TYPESENSE_HOST }}
+          TYPESENSE_API_KEY: ${{ secrets.PROD_TYPESENSE_API_KEY }}
+        run: |
+          tsctl migrate \
+            -a ${{ github.event.inputs.alias }} \
+            -c tsctl.config.ts \
+            --env production \
+            --create-only \
+            -y
+      
+      - name: Run Reindexing
+        run: |
+          # Your reindexing logic
+          bun run scripts/reindex.ts
+      
+      - name: Switch Alias
+        env:
+          TYPESENSE_HOST: ${{ secrets.PROD_TYPESENSE_HOST }}
+          TYPESENSE_API_KEY: ${{ secrets.PROD_TYPESENSE_API_KEY }}
+        run: |
+          tsctl migrate \
+            -a ${{ github.event.inputs.alias }} \
+            -c tsctl.config.ts \
+            --env production \
+            --switch-only \
+            --skip-delete \
+            -y
+```
+
+## Troubleshooting
+
+### Migration Failed
+
+If migration fails mid-process:
+
+1. Check error message
+2. Verify old collection still exists
+3. Manually switch alias back if needed
+4. Fix issue and retry
+
+### Alias Not Switching
+
+Verify collection exists:
+
+```bash
+tsctl state list
+```
+
+Ensure new collection is created before switching.
+
+### Old Collection Not Deleting
+
+Check if it's still in use:
+
+```bash
+# Check all aliases
+tsctl state list | grep alias
+```
+
+Ensure no aliases point to the old collection.
+
+## Related Commands
+
+- [`tsctl migrate`](/commands/migrate) - Blue/green migration command
+- [`tsctl apply`](/commands/apply) - Apply regular config changes
+- [`tsctl state list`](/commands/state) - View collection versions
+- [`tsctl drift`](/commands/drift) - Verify migration state

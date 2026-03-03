@@ -1,0 +1,365 @@
+---
+title: "Drift Detection"
+description: "Detect and monitor changes made to Typesense resources outside of tsctl"
+---
+
+## Overview
+
+Drift detection identifies when Typesense resources have been modified outside of tsctl—for example, through the Typesense Dashboard, direct API calls, or by other team members.
+
+This is critical for maintaining infrastructure-as-code discipline and ensuring your configuration files remain the source of truth.
+
+## What is Drift?
+
+Drift occurs when the **actual state** of your Typesense resources differs from the **expected state** tracked by tsctl. There are three types of drift:
+
+1. **Modified** - Resources changed outside of tsctl
+2. **Deleted** - Resources removed outside of tsctl
+3. **Unmanaged** - Resources that exist but aren't in your config
+
+## Running Drift Detection
+
+### Basic Usage
+
+```bash
+tsctl drift
+```
+
+Example output when drift is detected:
+
+```
+Drift Detection Report:
+
+  Modified outside of tsctl:
+    ~ collection.products
+        - "default_sorting_field": "price"
+        + "default_sorting_field": "created_at"
+
+  Deleted outside of tsctl:
+    - alias.products_staging
+
+  Unmanaged resources (not in config):
+    ? collection.temp_test
+    ? alias.legacy_products
+
+Summary:
+  1 modified, 1 deleted, 2 unmanaged
+
+  Run 'tsctl apply' to reconcile state with config.
+  Run 'tsctl import' to add unmanaged resources to config.
+```
+
+### JSON Output
+
+For programmatic parsing and CI/CD integration:
+
+```bash
+tsctl drift --json
+```
+
+Example JSON output:
+
+```json
+{
+  "items": [
+    {
+      "identifier": {
+        "type": "collection",
+        "name": "products"
+      },
+      "type": "modified",
+      "stateConfig": {
+        "name": "products",
+        "default_sorting_field": "price"
+      },
+      "actualConfig": {
+        "name": "products",
+        "default_sorting_field": "created_at"
+      }
+    }
+  ],
+  "hasDrift": true,
+  "summary": {
+    "modified": 1,
+    "deleted": 0,
+    "unmanaged": 0
+  }
+}
+```
+
+## Exit Codes
+
+The `drift` command uses exit codes for CI/CD integration:
+
+- **Exit 0**: No drift detected (success)
+- **Exit 1**: Drift detected (failure)
+
+This makes it easy to fail CI pipelines when drift is found:
+
+```bash
+tsctl drift || echo "Drift detected - pipeline failed!"
+```
+
+## How Drift Detection Works
+
+The drift detection implementation is in `src/plan/index.ts:852-965`:
+
+### Detection Process
+
+1. **Load State** - Retrieve tsctl's tracked state from `_tsctl_state` collection
+2. **Fetch Actual Resources** - Query Typesense for current resource configurations
+3. **Compare** - Normalize and compare state vs actual for each resource
+4. **Check Unmanaged** - Find resources in Typesense not tracked by tsctl
+5. **Generate Report** - Produce detailed diff report
+
+### Key Code
+
+```typescript
+export async function detectDrift(): Promise<DriftReport> {
+  const state = await loadState();
+  const items: DriftItem[] = [];
+
+  // Check each resource in state against actual Typesense state
+  for (const resource of state.resources) {
+    const { identifier, config: stateConfig } = resource;
+    let actualConfig: unknown = null;
+
+    try {
+      switch (identifier.type) {
+        case "collection":
+          actualConfig = await getCollection(identifier.name);
+          break;
+        case "alias":
+          actualConfig = await getAlias(identifier.name);
+          break;
+        // ... other resource types
+      }
+    } catch {
+      actualConfig = null;
+    }
+
+    if (actualConfig === null) {
+      // Resource was deleted outside of tsctl
+      items.push({
+        identifier,
+        type: "deleted",
+        stateConfig,
+      });
+    } else {
+      // Check if resource was modified
+      const normalizedState = normalizeForComparison(stateConfig);
+      const normalizedActual = normalizeForComparison(actualConfig);
+
+      if (JSON.stringify(normalizedState) !== JSON.stringify(normalizedActual)) {
+        items.push({
+          identifier,
+          type: "modified",
+          stateConfig,
+          actualConfig,
+        });
+      }
+    }
+  }
+
+  // Check for unmanaged resources
+  const allCollections = await listCollections();
+  for (const collection of allCollections) {
+    if (!managedCollections.has(collection.name)) {
+      items.push({
+        identifier: { type: "collection", name: collection.name },
+        type: "unmanaged",
+        actualConfig: collection,
+      });
+    }
+  }
+
+  return { items, hasDrift: items.length > 0, summary };
+}
+```
+
+## CI/CD Integration
+
+Drift detection is designed for automated monitoring in CI/CD pipelines.
+
+### GitHub Actions Example
+
+**`.github/workflows/drift-detection.yml`**
+```yaml
+name: Drift Detection
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  detect-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+      
+      - name: Install tsctl
+        run: bun install -g tsctl
+      
+      - name: Check Production Drift
+        env:
+          TYPESENSE_HOST: ${{ secrets.PROD_TYPESENSE_HOST }}
+          TYPESENSE_PORT: ${{ secrets.PROD_TYPESENSE_PORT }}
+          TYPESENSE_PROTOCOL: ${{ secrets.PROD_TYPESENSE_PROTOCOL }}
+          TYPESENSE_API_KEY: ${{ secrets.PROD_TYPESENSE_API_KEY }}
+        run: |
+          if ! tsctl drift --json > drift-report.json; then
+            echo "Drift detected in production!"
+            cat drift-report.json
+            exit 1
+          fi
+      
+      - name: Upload Drift Report
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: drift-report
+          path: drift-report.json
+```
+
+### GitLab CI Example
+
+**`.gitlab-ci.yml`**
+```yaml
+drift-detection:
+  image: oven/bun:latest
+  script:
+    - bun install -g tsctl
+    - tsctl drift --env production --json | tee drift-report.json
+  artifacts:
+    when: on_failure
+    paths:
+      - drift-report.json
+  only:
+    - schedules
+```
+
+### Slack Notifications
+
+Combine drift detection with notifications:
+
+```bash
+#!/bin/bash
+
+if ! tsctl drift --env production --json > drift.json; then
+  # Drift detected - send to Slack
+  curl -X POST $SLACK_WEBHOOK_URL \
+    -H 'Content-Type: application/json' \
+    -d '{
+      "text": "⚠️ Drift detected in production Typesense!",
+      "attachments": [{
+        "color": "warning",
+        "text": "'"$(cat drift.json)"'"
+      }]
+    }'
+  exit 1
+fi
+```
+
+## Responding to Drift
+
+### Option 1: Reconcile with Config
+
+If your config file is the source of truth, reconcile actual state:
+
+```bash
+# Review what will change
+tsctl plan
+
+# Apply to restore config as source of truth
+tsctl apply
+```
+
+### Option 2: Update Config
+
+If the actual changes are desired, update your config:
+
+1. Manually update `tsctl.config.ts` to match actual state
+2. Run `tsctl plan` to verify no changes needed
+3. Commit the updated config
+
+### Option 3: Import Unmanaged Resources
+
+For unmanaged resources you want to track:
+
+```bash
+# Import all resources into a new config file
+tsctl import -o tsctl.imported.config.ts
+
+# Review and merge into main config
+```
+
+## Monitoring Strategies
+
+### Scheduled Checks
+
+Run drift detection on a schedule:
+
+- **Every 6 hours** - For critical production environments
+- **Daily** - For staging/development environments
+- **Before deployments** - As a pre-deployment gate
+
+### Alert Thresholds
+
+Different drift types may require different urgency:
+
+- **Modified** - Review and reconcile within 24 hours
+- **Deleted** - Immediate alert (may indicate incident)
+- **Unmanaged** - Review weekly, may be temporary test resources
+
+### Drift Prevention
+
+1. **Limit access** - Only allow modifications through tsctl
+2. **Education** - Train team on infrastructure-as-code practices
+3. **Process** - Require all changes go through config + apply workflow
+4. **Monitoring** - Set up automated drift detection in CI/CD
+
+## Limitations
+
+### Resources Not Tracked
+
+Drift detection currently tracks:
+- Collections
+- Aliases
+- Synonyms
+- Overrides
+- API Keys (metadata only)
+
+It does **not** track:
+- Document data within collections
+- Cluster configuration
+- Server settings
+
+### API Key Values
+
+API key values cannot be retrieved after creation. Drift detection only compares:
+- Description
+- Actions
+- Collections
+- Expiration settings
+
+The actual key value is not compared.
+
+## Best Practices
+
+1. **Run regularly** - Schedule drift detection in CI/CD
+2. **Use --json** - Parse output programmatically for alerts
+3. **Monitor exit codes** - Fail pipelines when drift detected
+4. **Document exceptions** - If some drift is acceptable, document why
+5. **Fix promptly** - Don't let drift accumulate
+
+## Related Commands
+
+- [`tsctl apply`](/commands/apply) - Reconcile state with config
+- [`tsctl import`](/commands/import) - Import unmanaged resources
+- [`tsctl state list`](/commands/state) - View tracked resources
+- [`tsctl plan`](/commands/plan) - Preview reconciliation changes

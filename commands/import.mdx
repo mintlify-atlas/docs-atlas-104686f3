@@ -1,0 +1,284 @@
+---
+title: "tsctl import"
+description: "Import existing Typesense resources into tsctl management"
+---
+
+## Overview
+
+The `import` command discovers all existing resources in your Typesense instance and generates a configuration file that matches them. This brings unmanaged resources under tsctl control.
+
+## Syntax
+
+```bash
+tsctl import [options]
+```
+
+## Options
+
+<ParamField path="--out" type="string" default="tsctl.imported.config.ts">
+  Output path for the generated configuration file. Defaults to `tsctl.imported.config.ts` to avoid overwriting existing configs.
+</ParamField>
+
+<ParamField path="-o" type="string">
+  Short alias for `--out`.
+</ParamField>
+
+<ParamField path="--env" type="string">
+  Environment to use (loads `.env.<environment>`). Determines which Typesense instance to import from.
+</ParamField>
+
+## Behavior
+
+The import command:
+
+1. **Connects to Typesense** - Uses credentials from your environment
+2. **Discovers resources** - Fetches all collections, aliases, synonyms, overrides, and API keys
+3. **Generates config** - Creates a TypeScript config file with all discovered resources
+4. **Saves state** - Creates a state file tracking all imported resources
+5. **Reports summary** - Shows counts of each resource type found
+
+## Examples
+
+### Basic import
+
+```bash
+tsctl import
+```
+
+**Output:**
+```
+✓ Resources imported
+
+Found:
+  Collections: 3
+  Aliases: 2
+  Synonyms: 5
+  Synonym Sets: 0
+  Overrides: 3
+  Analytics Rules: 0
+  API Keys: 2
+
+  Note: API key values cannot be retrieved after creation.
+  Imported API keys will track existing keys but cannot recreate them.
+
+✓ Config written to /path/to/tsctl.imported.config.ts
+✓ State saved to Typesense
+
+Review the generated config and rename to tsctl.config.ts
+```
+
+### Import to specific file
+
+```bash
+tsctl import --out production.config.ts
+```
+
+### Import from production
+
+```bash
+tsctl import --env production --out production.imported.config.ts
+```
+
+## Generated Configuration
+
+The imported config includes all discovered resources:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "products",
+      fields: [
+        { name: "id", type: "string" },
+        { name: "name", type: "string" },
+        { name: "price", type: "float" },
+        { name: "created_at", type: "int64" }
+      ],
+      default_sorting_field: "created_at"
+    },
+    {
+      name: "users",
+      fields: [
+        { name: "id", type: "string" },
+        { name: "email", type: "string" },
+        { name: "name", type: "string" }
+      ]
+    }
+  ],
+  aliases: [
+    {
+      name: "products_live",
+      collection: "products"
+    }
+  ],
+  synonyms: [
+    {
+      id: "product_synonyms",
+      collection: "products",
+      synonyms: [["shoe", "sneaker", "footwear"]]
+    }
+  ],
+  overrides: [
+    {
+      id: "featured_products",
+      collection: "products",
+      rule: {
+        query: "featured",
+        match: "exact"
+      },
+      includes: [
+        { id: "product_1", position: 1 },
+        { id: "product_2", position: 2 }
+      ]
+    }
+  ],
+  apiKeys: [
+    {
+      description: "Search-only key",
+      actions: ["documents:search"],
+      collections: ["products", "users"]
+    }
+  ]
+});
+```
+
+## Resource Types Imported
+
+### Collections
+Complete schema including:
+- All fields with types, facets, optionality
+- Default sorting field
+- Token separators and symbols
+
+### Aliases
+Alias names and their target collections
+
+### Synonyms
+Both one-way and multi-way synonym definitions per collection
+
+### Synonym Sets
+Multi-collection synonym groups (if using Typesense Cloud)
+
+### Overrides
+Curation rules including:
+- Query matches
+- Filter conditions
+- Included/excluded documents
+- Positions and metadata
+
+### Analytics Rules
+Search analytics configurations
+
+### API Keys
+**Important:** Only metadata is imported:
+- Description
+- Actions (permissions)
+- Collections (scope)
+
+<Warning>
+  **API key values cannot be retrieved after creation.** The import includes key metadata for tracking, but cannot recreate the actual key values.
+</Warning>
+
+## Use Cases
+
+<AccordionGroup>
+  <Accordion title="Adopt existing infrastructure">
+    Bring an existing Typesense setup under tsctl management:
+    
+    ```bash
+    tsctl import --out current-state.config.ts
+    # Review the config
+    mv current-state.config.ts tsctl.config.ts
+    tsctl plan  # Should show no changes
+    ```
+  </Accordion>
+
+  <Accordion title="Environment synchronization">
+    Import from production to replicate in staging:
+    
+    ```bash
+    # Import production schema
+    tsctl import --env production --out prod.config.ts
+    
+    # Apply to staging
+    tsctl apply --env staging --config prod.config.ts
+    ```
+  </Accordion>
+
+  <Accordion title="Schema documentation">
+    Generate a config file to document your current schema:
+    
+    ```bash
+    tsctl import --out docs/current-schema.config.ts
+    # Commit to version control for reference
+    ```
+  </Accordion>
+
+  <Accordion title="Migration from manual management">
+    Transition from manual Typesense management to Infrastructure as Code:
+    
+    ```bash
+    # Import existing resources
+    tsctl import
+    
+    # Review and customize the config
+    # Rename when satisfied
+    mv tsctl.imported.config.ts tsctl.config.ts
+    
+    # Now manage via tsctl
+    tsctl plan
+    tsctl apply
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## State Management
+
+After import, tsctl creates a state file tracking all imported resources. This allows you to:
+
+- Run `tsctl plan` to see if anything changed
+- Run `tsctl apply` to make updates
+- Run `tsctl drift` to detect manual changes
+
+## Import Limitations
+
+<Warning>
+  **What cannot be imported:**
+  
+  - **API key values** - Only metadata (description, permissions, collections)
+  - **Document data** - Only schemas, not the actual documents
+  - **Analytics data** - Historical search analytics
+  - **Usage statistics** - Query counts, performance metrics
+</Warning>
+
+## API Keys and Import
+
+API keys are imported with metadata only:
+
+```typescript
+apiKeys: [
+  {
+    description: "Search-only key",
+    actions: ["documents:search"],
+    collections: ["products", "users"]
+    // Note: 'value' cannot be retrieved
+  }
+]
+```
+
+If you run `tsctl apply` with imported API keys:
+- Existing keys are tracked but not modified
+- You cannot recreate keys (Typesense doesn't expose values)
+- Remove API keys from config if you want tsctl to manage them
+
+## Next Steps
+
+After importing:
+
+1. **Review the generated config** - Check that all resources are correct
+2. **Rename the file** - `mv tsctl.imported.config.ts tsctl.config.ts`
+3. **Verify with plan** - `tsctl plan` should show no changes
+4. **Make updates** - Edit config and run `tsctl apply` for changes
+5. **Monitor drift** - Use [`tsctl drift`](/commands/drift) to detect manual changes

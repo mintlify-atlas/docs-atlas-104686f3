@@ -1,0 +1,456 @@
+---
+title: Analytics Rules
+description: AnalyticsRuleConfig type reference for tracking search analytics and user events
+---
+
+## AnalyticsRuleConfig
+
+Analytics rules enable automatic tracking and aggregation of search queries, popular queries, no-results queries, and custom events.
+
+### Properties
+
+<ParamField path="name" type="string" required>
+  Unique name for the analytics rule.
+
+  ```typescript
+  name: "track-product-searches"
+  ```
+</ParamField>
+
+<ParamField path="type" type="'popular_queries' | 'nohits_queries' | 'counter'" required>
+  Type of analytics to track.
+
+  ```typescript
+  type: "popular_queries"
+  ```
+
+  - `popular_queries`: Track and aggregate popular search queries
+  - `nohits_queries`: Track queries that return no results
+  - `counter`: Generic event counter for custom tracking
+</ParamField>
+
+<ParamField path="collection" type="string" required>
+  Source collection to track events from.
+
+  ```typescript
+  collection: "products"
+  ```
+</ParamField>
+
+<ParamField path="event_type" type="'search' | 'click' | 'conversion' | 'visit' | 'custom'" required>
+  Type of event to track.
+
+  ```typescript
+  event_type: "search"
+  ```
+
+  - `search`: Search query events
+  - `click`: Click events on search results
+  - `conversion`: Conversion events (purchases, signups, etc.)
+  - `visit`: Page visit events
+  - `custom`: Custom event types
+</ParamField>
+
+<ParamField path="rule_tag" type="string" optional>
+  Tag to filter events for this rule.
+
+  ```typescript
+  rule_tag: "product-search"
+  ```
+
+  Only events with this tag will be tracked.
+</ParamField>
+
+<ParamField path="params" type="AnalyticsRuleParams" optional>
+  Additional configuration parameters.
+
+  ```typescript
+  params: {
+    destination_collection: "analytics_popular_queries",
+    limit: 1000,
+  }
+  ```
+
+  See [Analytics Rule Params](#analytics-rule-params) below.
+</ParamField>
+
+## Analytics Rule Params
+
+### AnalyticsRuleParams Properties
+
+<ParamField path="destination_collection" type="string" optional>
+  Collection where analytics data will be stored.
+
+  ```typescript
+  destination_collection: "analytics_queries"
+  ```
+
+  If not specified, a default collection is created.
+</ParamField>
+
+<ParamField path="limit" type="number" optional default="1000">
+  Maximum number of analytics documents to retain.
+
+  ```typescript
+  limit: 5000
+  ```
+
+  Older documents are automatically removed when limit is reached.
+</ParamField>
+
+<ParamField path="capture_search_requests" type="boolean" optional default="false">
+  Store full search request details.
+
+  ```typescript
+  capture_search_requests: true
+  ```
+
+  Useful for debugging and detailed analysis.
+</ParamField>
+
+<ParamField path="meta_fields" type="string[]" optional>
+  Additional metadata fields to capture.
+
+  ```typescript
+  meta_fields: ["user_id", "session_id", "device_type"]
+  ```
+</ParamField>
+
+<ParamField path="expand_query" type="boolean" optional default="false">
+  Expand query to include all query variations.
+
+  ```typescript
+  expand_query: true
+  ```
+</ParamField>
+
+<ParamField path="counter_field" type="string" optional>
+  Field to use as counter (for `counter` type rules).
+
+  ```typescript
+  counter_field: "click_count"
+  ```
+</ParamField>
+
+<ParamField path="weight" type="number" optional default="1">
+  Weight to apply to each event.
+
+  ```typescript
+  weight: 2.5
+  ```
+
+  Useful for giving more importance to certain events.
+</ParamField>
+
+## Examples
+
+### Track Popular Queries
+
+Automatically aggregate and rank popular search queries:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  analyticsRules: [
+    {
+      name: "popular-product-searches",
+      type: "popular_queries",
+      collection: "products",
+      event_type: "search",
+      params: {
+        destination_collection: "analytics_popular_queries",
+        limit: 1000,
+      },
+    },
+  ],
+});
+```
+
+### Track No-Results Queries
+
+Identify queries that return no results:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  analyticsRules: [
+    {
+      name: "nohits-product-searches",
+      type: "nohits_queries",
+      collection: "products",
+      event_type: "search",
+      params: {
+        destination_collection: "analytics_nohits",
+        limit: 500,
+        capture_search_requests: true,
+      },
+    },
+  ],
+});
+```
+
+### Track Click Events
+
+Count clicks on search results:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  analyticsRules: [
+    {
+      name: "product-clicks",
+      type: "counter",
+      collection: "products",
+      event_type: "click",
+      params: {
+        destination_collection: "analytics_clicks",
+        counter_field: "click_count",
+        meta_fields: ["user_id", "position"],
+      },
+    },
+  ],
+});
+```
+
+### Track Conversions
+
+Track purchase events:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  analyticsRules: [
+    {
+      name: "product-conversions",
+      type: "counter",
+      collection: "products",
+      event_type: "conversion",
+      params: {
+        destination_collection: "analytics_conversions",
+        counter_field: "conversion_count",
+        meta_fields: ["user_id", "revenue", "product_id"],
+        weight: 10,  // Higher weight for conversions
+      },
+    },
+  ],
+});
+```
+
+### Tagged Analytics
+
+Track events with specific tags:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  analyticsRules: [
+    {
+      name: "mobile-searches",
+      type: "popular_queries",
+      collection: "products",
+      event_type: "search",
+      rule_tag: "mobile",
+      params: {
+        destination_collection: "analytics_mobile_queries",
+      },
+    },
+    {
+      name: "desktop-searches",
+      type: "popular_queries",
+      collection: "products",
+      event_type: "search",
+      rule_tag: "desktop",
+      params: {
+        destination_collection: "analytics_desktop_queries",
+      },
+    },
+  ],
+});
+```
+
+### Custom Events
+
+Track custom business events:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  analyticsRules: [
+    {
+      name: "wishlist-additions",
+      type: "counter",
+      collection: "products",
+      event_type: "custom",
+      params: {
+        destination_collection: "analytics_wishlist",
+        counter_field: "wishlist_count",
+        meta_fields: ["user_id", "product_id", "timestamp"],
+      },
+    },
+  ],
+});
+```
+
+### Complete Analytics Setup
+
+Comprehensive analytics tracking:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  analyticsRules: [
+    {
+      name: "popular-queries",
+      type: "popular_queries",
+      collection: "products",
+      event_type: "search",
+      params: {
+        destination_collection: "analytics_popular",
+        limit: 1000,
+      },
+    },
+    {
+      name: "nohits-queries",
+      type: "nohits_queries",
+      collection: "products",
+      event_type: "search",
+      params: {
+        destination_collection: "analytics_nohits",
+        limit: 500,
+        capture_search_requests: true,
+      },
+    },
+    {
+      name: "result-clicks",
+      type: "counter",
+      collection: "products",
+      event_type: "click",
+      params: {
+        destination_collection: "analytics_clicks",
+        counter_field: "clicks",
+        meta_fields: ["user_id", "query", "position"],
+      },
+    },
+    {
+      name: "conversions",
+      type: "counter",
+      collection: "products",
+      event_type: "conversion",
+      params: {
+        destination_collection: "analytics_conversions",
+        counter_field: "purchases",
+        meta_fields: ["user_id", "query", "revenue"],
+        weight: 5,
+      },
+    },
+  ],
+});
+```
+
+## Use Cases
+
+### 1. Search Quality Monitoring
+
+- Track no-results queries to identify gaps in content
+- Monitor popular queries to optimize search relevance
+- Analyze query patterns for synonym suggestions
+
+### 2. Business Intelligence
+
+- Track conversion rates from search to purchase
+- Identify high-value search queries
+- Monitor seasonal trends in search behavior
+
+### 3. User Experience Optimization
+
+- Track click-through rates on search results
+- Identify queries with low engagement
+- A/B test search result ordering
+
+### 4. Content Strategy
+
+- Discover trending topics from popular queries
+- Identify content gaps from no-results queries
+- Prioritize content creation based on search demand
+
+## Querying Analytics Data
+
+Analytics data is stored in Typesense collections and can be queried:
+
+```typescript
+// Get top 10 popular queries
+const popularQueries = await client
+  .collections('analytics_popular_queries')
+  .documents()
+  .search({
+    q: '*',
+    sort_by: 'count:desc',
+    per_page: 10,
+  });
+
+// Get queries with no results
+const nohitsQueries = await client
+  .collections('analytics_nohits')
+  .documents()
+  .search({
+    q: '*',
+    sort_by: 'count:desc',
+  });
+```
+
+## Best Practices
+
+### 1. Set Appropriate Limits
+
+Balance data retention with storage costs:
+
+```typescript
+params: {
+  limit: 1000,  // Adjust based on needs
+}
+```
+
+### 2. Use Destination Collections
+
+Organize analytics data:
+
+```typescript
+params: {
+  destination_collection: "analytics_popular_queries_2024",
+}
+```
+
+### 3. Capture Metadata
+
+Include relevant context:
+
+```typescript
+params: {
+  meta_fields: ["user_id", "session_id", "device_type", "location"],
+}
+```
+
+### 4. Tag Events
+
+Segment analytics by context:
+
+```typescript
+rule_tag: "mobile-app"
+```
+
+### 5. Monitor Storage
+
+Regularly review and archive old analytics data.
+
+## Related
+
+- [Overrides Reference](/config/overrides)
+- [Collections Reference](/config/collections)
+- [Analytics Guide](/config/analytics-rules)

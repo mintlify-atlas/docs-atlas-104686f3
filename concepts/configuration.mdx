@@ -1,0 +1,364 @@
+---
+title: "Configuration"
+description: "Learn about tsctl configuration files, formats, and validation"
+---
+
+tsctl uses a flexible configuration system that supports multiple file formats and provides type safety through Zod schema validation.
+
+## Configuration File Formats
+
+tsctl automatically searches for configuration files in the following order:
+
+<CodeGroup>
+```typescript tsctl.config.ts (Recommended)
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "products",
+      fields: [
+        { name: "name", type: "string" },
+        { name: "price", type: "float" },
+        { name: "category", type: "string", facet: true },
+      ],
+      default_sorting_field: "created_at",
+    },
+  ],
+  aliases: [
+    {
+      name: "products_live",
+      collection: "products",
+    },
+  ],
+});
+```
+
+```javascript tsctl.config.js
+module.exports = {
+  collections: [
+    {
+      name: "products",
+      fields: [
+        { name: "name", type: "string" },
+        { name: "price", type: "float" },
+      ],
+    },
+  ],
+};
+```
+
+```json tsctl.config.json
+{
+  "collections": [
+    {
+      "name": "products",
+      "fields": [
+        { "name": "name", "type": "string" },
+        { "name": "price", "type": "float" }
+      ]
+    }
+  ]
+}
+```
+
+```yaml tsctl.config.yaml
+collections:
+  - name: products
+    fields:
+      - name: name
+        type: string
+      - name: price
+        type: float
+```
+</CodeGroup>
+
+### Supported File Names
+
+tsctl searches for configuration in this priority order (src/config/loader.ts:38-82):
+
+1. **package.json** - `"tsctl"` property
+2. **RC files** - `.tsctlrc`, `.tsctlrc.json`, `.tsctlrc.yaml`, `.tsctlrc.yml`
+3. **JavaScript RC files** - `.tsctlrc.js`, `.tsctlrc.cjs`, `.tsctlrc.mjs`
+4. **TypeScript RC files** - `.tsctlrc.ts`, `.tsctlrc.cts`, `.tsctlrc.mts`
+5. **Config files (JS)** - `tsctl.config.js`, `tsctl.config.cjs`, `tsctl.config.mjs`
+6. **Config files (TS)** - `tsctl.config.ts`, `tsctl.config.cts`, `tsctl.config.mts`
+7. **Config files (JSON/YAML)** - `tsctl.config.json`, `tsctl.config.yaml`, `tsctl.config.yml`
+8. **Legacy files** - `typesense.config.{js,ts,json,yaml}` (for backward compatibility)
+
+<Tip>
+**TypeScript is recommended** for the best development experience with autocomplete and type checking.
+</Tip>
+
+## The `defineConfig` Helper
+
+The `defineConfig` helper provides TypeScript intellisense and runtime validation:
+
+```typescript tsctl.config.ts
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "articles",
+      fields: [
+        { name: "title", type: "string" },
+        { name: "body", type: "string" },
+        { name: "author", type: "string", facet: true },
+        { name: "tags", type: "string[]", facet: true },
+        { name: "published_at", type: "int64" },
+        { name: "views", type: "int32" },
+      ],
+      default_sorting_field: "published_at",
+      enable_nested_fields: true,
+    },
+  ],
+  synonyms: [
+    {
+      id: "programming-synonyms",
+      collection: "articles",
+      synonyms: ["code", "programming", "development"],
+    },
+  ],
+  apiKeys: [
+    {
+      description: "Search API Key",
+      actions: ["documents:search"],
+      collections: ["articles"],
+    },
+  ],
+});
+```
+
+### What `defineConfig` Does
+
+1. **Type Safety** - Provides TypeScript types for autocomplete
+2. **Validation** - Validates configuration against Zod schema at runtime (src/types/index.ts:314-316)
+3. **Error Messages** - Returns clear validation errors if configuration is invalid
+
+<CodeGroup>
+```typescript Type-safe configuration
+import { defineConfig, type CollectionConfig } from "tsctl";
+
+const productCollection: CollectionConfig = {
+  name: "products",
+  fields: [
+    { name: "name", type: "string" },
+    { name: "price", type: "float" },
+    // TypeScript will catch invalid field types
+  ],
+};
+
+export default defineConfig({
+  collections: [productCollection],
+});
+```
+
+```typescript Reusable field definitions
+import { defineConfig, type Field } from "tsctl";
+
+const timestampFields: Field[] = [
+  { name: "created_at", type: "int64" },
+  { name: "updated_at", type: "int64" },
+];
+
+export default defineConfig({
+  collections: [
+    {
+      name: "products",
+      fields: [
+        { name: "name", type: "string" },
+        ...timestampFields,
+      ],
+    },
+    {
+      name: "users",
+      fields: [
+        { name: "email", type: "string" },
+        ...timestampFields,
+      ],
+    },
+  ],
+});
+```
+</CodeGroup>
+
+## Configuration Validation
+
+tsctl uses [Zod](https://zod.dev) for schema validation (src/types/index.ts:1-317). Every configuration is validated before being applied.
+
+### Validation Workflow
+
+1. **Load** - Configuration file is loaded using cosmiconfig (src/config/loader.ts:108-121)
+2. **Parse** - Zod schema validates the structure (src/config/loader.ts:136-138)
+3. **Error Reporting** - Clear error messages show what's wrong
+
+```bash Example validation error
+$ tsctl validate
+✗ Config validation failed
+
+Invalid config in /path/to/tsctl.config.ts:
+[
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": ["collections", 0, "name"],
+    "message": "Expected string, received number"
+  }
+]
+```
+
+### Schema Structure
+
+The configuration schema validates (src/types/index.ts:226-238):
+
+- **collections** - Array of collection configurations (optional)
+- **aliases** - Array of alias configurations (optional)
+- **synonyms** - Legacy per-collection synonyms for Typesense < 30.0 (optional)
+- **synonymSets** - Global synonym sets for Typesense 30.0+ (optional)
+- **overrides** - Search result overrides/curations (optional)
+- **analyticsRules** - Analytics and popular queries rules (optional)
+- **apiKeys** - API key definitions (optional)
+
+<Note>
+All top-level properties are optional. You can have a config with just collections, or just API keys, or any combination.
+</Note>
+
+## Loading Configuration
+
+### Automatic Discovery
+
+By default, tsctl searches for configuration files starting from the current directory and walking up the directory tree:
+
+```bash
+$ tsctl plan
+Loading config...  # Automatically finds tsctl.config.ts
+✓ Config loaded
+```
+
+### Explicit Path
+
+You can specify a configuration file path:
+
+```bash
+$ tsctl plan --config ./configs/production.config.ts
+$ tsctl apply -c ./configs/staging.config.ts
+```
+
+### Programmatic Usage
+
+You can also load configuration programmatically:
+
+```typescript
+import { loadConfig } from "tsctl";
+
+// Load from default location
+const config = await loadConfig();
+
+// Load from specific path
+const config = await loadConfig("/path/to/config.ts");
+```
+
+## TypeScript Configuration
+
+### Cache Busting
+
+tsctl automatically cache-busts TypeScript configuration files to ensure fresh imports on every load (src/config/loader.ts:11-17):
+
+```typescript typeScriptLoader
+async function typeScriptLoader(filepath: string): Promise<unknown> {
+  const fileUrl = pathToFileURL(filepath).href;
+  // Add cache busting to ensure we get fresh config
+  const cacheBustedUrl = `${fileUrl}?t=${Date.now()}`;
+  const module = await import(cacheBustedUrl);
+  return module.default || module;
+}
+```
+
+This ensures your configuration changes are always picked up without restarting Node.js.
+
+### ESM and CommonJS Support
+
+tsctl supports both ESM and CommonJS modules:
+
+<CodeGroup>
+```typescript ESM (.mts, .ts with "type": "module")
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  // config
+});
+```
+
+```javascript CommonJS (.cjs, .js)
+const { defineConfig } = require("tsctl");
+
+module.exports = defineConfig({
+  // config
+});
+```
+</CodeGroup>
+
+## Environment-Specific Configuration
+
+While tsctl has a single configuration file, you can create environment-specific configs:
+
+```typescript Multi-environment setup
+// tsctl.config.base.ts
+import { defineConfig, type TypesenseConfig } from "tsctl";
+
+export const baseConfig: TypesenseConfig = {
+  collections: [
+    // shared collections
+  ],
+};
+
+// tsctl.config.ts (development)
+import { defineConfig } from "tsctl";
+import { baseConfig } from "./tsctl.config.base";
+
+export default defineConfig({
+  ...baseConfig,
+  // development-specific overrides
+});
+
+// tsctl.config.prod.ts (production)
+import { defineConfig } from "tsctl";
+import { baseConfig } from "./tsctl.config.base";
+
+export default defineConfig({
+  ...baseConfig,
+  // production-specific overrides
+});
+```
+
+Then use the `--config` flag to specify which config to use:
+
+```bash
+# Development
+tsctl apply
+
+# Production
+tsctl apply --config tsctl.config.prod.ts --env production
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="State Management" icon="database" href="/concepts/state-management">
+    Learn how tsctl tracks and manages infrastructure state
+  </Card>
+  
+  <Card title="Plan & Apply" icon="code-compare" href="/concepts/plan-apply-workflow">
+    Understand the Terraform-like workflow for safe changes
+  </Card>
+  
+  <Card title="Configuration Reference" icon="book" href="/config/overview">
+    Detailed reference for all configuration options
+  </Card>
+  
+  <Card title="Commands" icon="terminal" href="/commands/validate">
+    Explore tsctl commands including validate
+  </Card>
+</CardGroup>

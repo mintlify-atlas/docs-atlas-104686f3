@@ -1,0 +1,300 @@
+---
+title: "Multi-Environment Support"
+description: "Manage multiple Typesense environments with environment-specific configuration files"
+---
+
+## Overview
+
+tsctl supports managing multiple Typesense environments (development, staging, production) using environment-specific `.env` files. This allows you to maintain a single configuration file while deploying to different Typesense instances.
+
+## How Environment Loading Works
+
+tsctl uses a two-phase environment loading strategy:
+
+1. **Base .env file** is always loaded first with default/development settings
+2. **Environment-specific .env file** (e.g., `.env.production`) is loaded and overrides base values
+
+The environment loading is implemented in `src/cli/index.ts:23-37`:
+
+```typescript
+function loadEnvironment(env?: string): void {
+  // Always load base .env first
+  dotenvConfig();
+
+  if (env) {
+    // Load environment-specific .env file
+    const envFile = resolve(process.cwd(), `.env.${env}`);
+    if (existsSync(envFile)) {
+      dotenvConfig({ path: envFile, override: true });
+      console.log(chalk.gray(`Using environment: ${env}`));
+    } else {
+      console.log(chalk.yellow(`Warning: Environment file .env.${env} not found, using defaults`));
+    }
+  }
+}
+```
+
+## Setup
+
+### Initialize with Environment Files
+
+Create environment files automatically during project initialization:
+
+```bash
+tsctl init --with-environments
+```
+
+This creates:
+- `.env` - Default/development settings
+- `.env.development` - Development environment
+- `.env.staging` - Staging environment  
+- `.env.production` - Production environment
+
+### Manual Setup
+
+Create environment files manually:
+
+**`.env` (base/default)**
+```env
+TYPESENSE_HOST=localhost
+TYPESENSE_PORT=8108
+TYPESENSE_PROTOCOL=http
+TYPESENSE_API_KEY=dev-api-key
+```
+
+**`.env.staging`**
+```env
+TYPESENSE_HOST=staging.typesense.example.com
+TYPESENSE_PORT=443
+TYPESENSE_PROTOCOL=https
+TYPESENSE_API_KEY=staging-api-key
+```
+
+**`.env.production`**
+```env
+TYPESENSE_HOST=production.typesense.example.com
+TYPESENSE_PORT=443
+TYPESENSE_PROTOCOL=https
+TYPESENSE_API_KEY=production-api-key
+```
+
+## Usage
+
+### Using the --env Flag
+
+All tsctl commands support the `--env` flag to target a specific environment:
+
+```bash
+# Plan changes against staging
+tsctl plan --env staging
+
+# Apply to production
+tsctl apply --env production
+
+# Check drift in staging
+tsctl drift --env staging
+
+# Import from development
+tsctl import --env development
+
+# Migrate production collection
+tsctl migrate -a products_live -c tsctl.config.ts --env production
+```
+
+### Environment Management Commands
+
+List available environments:
+
+```bash
+tsctl env list
+```
+
+Output:
+```
+Available environments:
+
+  ● (default) (.env)
+  ○ development (.env.development)
+  ○ staging (.env.staging)
+  ○ production (.env.production)
+
+Use --env flag to switch:
+  tsctl plan --env production
+  tsctl apply --env staging -y
+```
+
+Show current environment configuration:
+
+```bash
+# Show default environment
+tsctl env show
+
+# Show specific environment
+tsctl --env production env show
+```
+
+Output:
+```
+Environment: production
+
+  Host:     production.typesense.example.com
+  Port:     443
+  Protocol: https
+  API Key:  ●●●●●●●● (set)
+  URL:      https://production.typesense.example.com:443
+
+✓ Connected to Typesense
+```
+
+## State Management Across Environments
+
+Each Typesense instance maintains its own state collection (`_tsctl_state`). This means:
+
+- **Development** has its own state tracking development resources
+- **Staging** has its own state tracking staging resources
+- **Production** has its own state tracking production resources
+
+State is **not shared** between environments, allowing independent management.
+
+<Warning>
+Always verify which environment you're targeting before running destructive commands like `apply` or `destroy`.
+</Warning>
+
+## Best Practices
+
+### 1. Version Control
+
+Commit `.env.example` but **never commit actual `.env` files** with credentials:
+
+```bash
+# .gitignore
+.env
+.env.*
+!.env.example
+```
+
+### 2. Environment Naming
+
+Use consistent environment names across your organization:
+- `development` or `dev`
+- `staging` or `stage`
+- `production` or `prod`
+
+### 3. Test Before Production
+
+Always test changes in staging before applying to production:
+
+```bash
+# Test in staging first
+tsctl plan --env staging
+tsctl apply --env staging -y
+
+# Verify staging works, then deploy to production
+tsctl plan --env production
+tsctl apply --env production
+```
+
+### 4. Use Auto-Approve Carefully
+
+Avoid using `-y` (auto-approve) for production:
+
+```bash
+# Staging - auto-approve is safer
+tsctl apply --env staging -y
+
+# Production - review changes manually
+tsctl apply --env production  # No -y flag
+```
+
+## Environment-Specific Configurations
+
+### Different Schemas per Environment
+
+You can create environment-specific config files:
+
+**`tsctl.config.ts`** (base config)
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "products",
+      fields: [
+        { name: "title", type: "string" },
+        { name: "price", type: "float" },
+      ],
+      default_sorting_field: "price",
+    },
+  ],
+});
+```
+
+**`tsctl.staging.config.ts`** (staging-specific)
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "products",
+      fields: [
+        { name: "title", type: "string" },
+        { name: "price", type: "float" },
+        { name: "test_field", type: "string", optional: true },
+      ],
+      default_sorting_field: "price",
+    },
+  ],
+});
+```
+
+Use with the `-c` flag:
+
+```bash
+tsctl apply --env staging -c tsctl.staging.config.ts
+```
+
+## Troubleshooting
+
+### Environment File Not Found
+
+If you see:
+```
+Warning: Environment file .env.production not found, using defaults
+```
+
+Create the missing file:
+```bash
+cp .env .env.production
+# Edit .env.production with production credentials
+```
+
+### Wrong Environment Connection
+
+Verify which environment you're connected to:
+
+```bash
+tsctl --env production env show
+```
+
+Check that the URL matches your intended environment.
+
+### State Conflicts
+
+If state seems incorrect, remember each environment has its own state:
+
+```bash
+# Check state in each environment
+tsctl --env development state list
+tsctl --env staging state list
+tsctl --env production state list
+```
+
+## Related Commands
+
+- [`tsctl env list`](/commands/env) - List available environments
+- [`tsctl env show`](/commands/env) - Show environment configuration  
+- [`tsctl init`](/commands/init) - Initialize project with environments
+- [`tsctl plan`](/commands/plan) - Preview changes for an environment
+- [`tsctl apply`](/commands/apply) - Apply changes to an environment

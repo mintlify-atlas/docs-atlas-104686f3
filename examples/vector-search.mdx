@@ -1,0 +1,491 @@
+---
+title: 'Vector Search'
+description: 'Semantic search with embeddings, string* fields, and image search'
+icon: 'brain'
+---
+
+## Overview
+
+This example demonstrates vector/semantic search capabilities with:
+- Automatic text embeddings using `string*` field type
+- Image embeddings using `image` field type
+- Manual embeddings with explicit vector fields
+- Hybrid search (combining keyword and semantic search)
+- Configuration for popular embedding models
+
+## Auto-Embedding Configuration
+
+Typesense can automatically generate embeddings using the `string*` and `image` field types.
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "products_semantic",
+      fields: [
+        { name: "id", type: "string" },
+        { name: "title", type: "string" },
+        { name: "description", type: "string", optional: true },
+        
+        // Auto-embedding fields
+        {
+          name: "embedding",
+          type: "string*",
+          embed: {
+            from: ["title", "description"],
+            model_config: {
+              model_name: "ts/all-MiniLM-L12-v2",
+            },
+          },
+        },
+        
+        { name: "category", type: "string", facet: true },
+        { name: "price", type: "float" },
+        { name: "popularity", type: "int32" },
+      ],
+      default_sorting_field: "popularity",
+    },
+  ],
+  aliases: [
+    {
+      name: "products_live",
+      collection: "products_semantic",
+    },
+  ],
+});
+```
+
+## Manual Vector Configuration
+
+For pre-computed embeddings or custom models:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "products_vectors",
+      fields: [
+        { name: "id", type: "string" },
+        { name: "title", type: "string" },
+        { name: "description", type: "string", optional: true },
+        
+        // Manual vector field
+        {
+          name: "title_embedding",
+          type: "float[]",
+          num_dim: 384,        // Embedding dimensions
+          vec_dist: "cosine",  // Distance metric: "cosine" or "ip" (inner product)
+        },
+        
+        { name: "category", type: "string", facet: true },
+        { name: "price", type: "float" },
+        { name: "popularity", type: "int32" },
+      ],
+      default_sorting_field: "popularity",
+    },
+  ],
+});
+```
+
+## Image Search Configuration
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "products_visual",
+      fields: [
+        { name: "id", type: "string" },
+        { name: "title", type: "string" },
+        { name: "image_url", type: "string", index: false },
+        
+        // Image embedding field
+        {
+          name: "image_embedding",
+          type: "image",
+          embed: {
+            from: ["image_url"],
+            model_config: {
+              model_name: "ts/clip-vit-b-p32",
+            },
+          },
+        },
+        
+        { name: "category", type: "string", facet: true },
+        { name: "price", type: "float" },
+      ],
+      default_sorting_field: "price",
+    },
+  ],
+});
+```
+
+## Field Types and Properties
+
+### string* (Auto-Embedding for Text)
+
+```typescript
+{
+  name: "embedding",
+  type: "string*",
+  embed: {
+    from: ["title", "description"],  // Source fields
+    model_config: {
+      model_name: "ts/all-MiniLM-L12-v2",
+    },
+  },
+}
+```
+
+### image (Auto-Embedding for Images)
+
+```typescript
+{
+  name: "image_embedding",
+  type: "image",
+  embed: {
+    from: ["image_url"],  // URL or base64 image data
+    model_config: {
+      model_name: "ts/clip-vit-b-p32",
+    },
+  },
+}
+```
+
+### float[] (Manual Vectors)
+
+```typescript
+{
+  name: "custom_embedding",
+  type: "float[]",
+  num_dim: 384,        // Number of dimensions
+  vec_dist: "cosine",  // Distance metric
+}
+```
+
+### Vector Distance Metrics
+
+- `cosine` - Cosine similarity (most common)
+- `ip` - Inner product (for normalized vectors)
+
+## Built-in Embedding Models
+
+Typesense Cloud and self-hosted instances with ML models support:
+
+### Text Models
+
+| Model | Dimensions | Description |
+|-------|------------|-------------|
+| `ts/all-MiniLM-L12-v2` | 384 | Fast, general-purpose (recommended) |
+| `ts/all-mpnet-base-v2` | 768 | Higher quality, slower |
+| `ts/e5-small-v2` | 384 | E5 model, good performance |
+
+### Image Models
+
+| Model | Dimensions | Description |
+|-------|------------|-------------|
+| `ts/clip-vit-b-p32` | 512 | CLIP model for image search |
+
+### OpenAI Models
+
+Use OpenAI's embedding API:
+
+```typescript
+{
+  name: "embedding",
+  type: "string*",
+  embed: {
+    from: ["title", "description"],
+    model_config: {
+      model_name: "openai/text-embedding-ada-002",
+      api_key: process.env.OPENAI_API_KEY,
+    },
+  },
+}
+```
+
+### Google Vertex AI Models
+
+Use Google's Vertex AI:
+
+```typescript
+{
+  name: "embedding",
+  type: "string*",
+  embed: {
+    from: ["title", "description"],
+    model_config: {
+      model_name: "google/textembedding-gecko@003",
+      project_id: "your-gcp-project",
+      service_account: {
+        client_email: "[email protected]",
+        private_key: process.env.GCP_PRIVATE_KEY,
+      },
+    },
+  },
+}
+```
+
+## Document Examples
+
+### Auto-Embedding Document (string*)
+
+Typesense generates embeddings automatically:
+
+```json
+{
+  "id": "product-123",
+  "title": "Wireless Noise-Cancelling Headphones",
+  "description": "Premium over-ear headphones with active noise cancellation",
+  "category": "Electronics",
+  "price": 299.99,
+  "popularity": 87
+}
+```
+
+No need to provide the `embedding` field—Typesense creates it from `title` and `description`.
+
+### Manual Vector Document (float[])
+
+You provide pre-computed embeddings:
+
+```json
+{
+  "id": "product-123",
+  "title": "Wireless Headphones",
+  "description": "Premium headphones",
+  "title_embedding": [0.123, -0.456, 0.789, ...],  // 384 dimensions
+  "category": "Electronics",
+  "price": 299.99,
+  "popularity": 87
+}
+```
+
+### Image Search Document
+
+```json
+{
+  "id": "product-456",
+  "title": "Red Running Shoes",
+  "image_url": "https://example.com/images/red-shoes.jpg",
+  "category": "Footwear",
+  "price": 89.99
+}
+```
+
+Typesense fetches the image and generates embeddings automatically.
+
+## Search Queries
+
+### Semantic Search (Vector Only)
+
+```bash
+curl "http://localhost:8108/collections/products_live/documents/search" \
+  -d 'q=headphones for running&query_by=embedding&prefix=false' \
+  -H "X-TYPESENSE-API-KEY: ${SEARCH_API_KEY}"
+```
+
+### Hybrid Search (Keyword + Semantic)
+
+Combine traditional keyword search with semantic search:
+
+```bash
+curl "http://localhost:8108/collections/products_live/documents/search" \
+  -d 'q=noise cancelling&query_by=title,description,embedding' \
+  -H "X-TYPESENSE-API-KEY: ${SEARCH_API_KEY}"
+```
+
+### Image Similarity Search
+
+Find visually similar products:
+
+```bash
+curl "http://localhost:8108/collections/products_live/documents/search" \
+  -d 'q=*&image=https://example.com/query-image.jpg&query_by=image_embedding' \
+  -H "X-TYPESENSE-API-KEY: ${SEARCH_API_KEY}"
+```
+
+### Vector Search with Filters
+
+```bash
+curl "http://localhost:8108/collections/products_live/documents/search" \
+  -d 'q=comfortable shoes&query_by=embedding&filter_by=category:=Footwear && price:[50..150]' \
+  -H "X-TYPESENSE-API-KEY: ${SEARCH_API_KEY}"
+```
+
+## Advanced: Multi-Vector Fields
+
+Use multiple embedding fields for different purposes:
+
+```typescript
+import { defineConfig } from "tsctl";
+
+export default defineConfig({
+  collections: [
+    {
+      name: "products_multi_vector",
+      fields: [
+        { name: "id", type: "string" },
+        { name: "title", type: "string" },
+        { name: "description", type: "string", optional: true },
+        { name: "image_url", type: "string", index: false, optional: true },
+        
+        // Text embedding
+        {
+          name: "text_embedding",
+          type: "string*",
+          embed: {
+            from: ["title", "description"],
+            model_config: {
+              model_name: "ts/all-MiniLM-L12-v2",
+            },
+          },
+        },
+        
+        // Title-only embedding (for precise matching)
+        {
+          name: "title_embedding",
+          type: "string*",
+          embed: {
+            from: ["title"],
+            model_config: {
+              model_name: "ts/all-MiniLM-L12-v2",
+            },
+          },
+        },
+        
+        // Image embedding
+        {
+          name: "image_embedding",
+          type: "image",
+          optional: true,
+          embed: {
+            from: ["image_url"],
+            model_config: {
+              model_name: "ts/clip-vit-b-p32",
+            },
+          },
+        },
+        
+        { name: "category", type: "string", facet: true },
+        { name: "price", type: "float" },
+      ],
+      default_sorting_field: "price",
+    },
+  ],
+});
+```
+
+Search across specific embeddings:
+
+```bash
+# Text-based semantic search
+curl -d 'q=wireless headphones&query_by=text_embedding' ...
+
+# Title-focused search
+curl -d 'q=headphones&query_by=title_embedding' ...
+
+# Multi-modal search (text + image)
+curl -d 'q=red shoes&query_by=text_embedding,image_embedding' ...
+```
+
+## Performance Considerations
+
+### num_dim Selection
+
+Choose dimensions based on your model:
+
+- `384` - MiniLM, E5-small (fast, good quality)
+- `512` - CLIP models (image search)
+- `768` - MPNet, larger models (higher quality)
+- `1536` - OpenAI ada-002 (very high quality)
+
+### vec_dist Selection
+
+- Use `cosine` for most cases (normalized similarity)
+- Use `ip` (inner product) if your vectors are already normalized and you need faster queries
+
+## Deployment
+
+```bash
+# Validate configuration
+tsctl validate
+
+# Plan changes
+tsctl plan
+
+# Apply configuration
+tsctl apply
+```
+
+## Application Integration Example
+
+```javascript
+const semanticSearch = async (query) => {
+  const response = await fetch(
+    `https://your-typesense.com/collections/products_live/documents/search`,
+    {
+      method: 'POST',
+      headers: {
+        'X-TYPESENSE-API-KEY': searchApiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        q: query,
+        // Hybrid search: keyword + semantic
+        query_by: 'title,description,embedding',
+        facet_by: 'category',
+        per_page: 20,
+      }),
+    }
+  );
+
+  return response.json();
+};
+
+// Usage
+const results = await semanticSearch('comfortable running shoes');
+```
+
+## Best Practices
+
+### 1. Start with Built-in Models
+
+Use Typesense's built-in models for simplicity:
+
+```typescript
+model_name: "ts/all-MiniLM-L12-v2"
+```
+
+### 2. Use Hybrid Search
+
+Combine keyword and semantic search for best results:
+
+```typescript
+query_by: 'title,description,embedding'
+```
+
+### 3. Add Filters for Precision
+
+Combine semantic search with facets and filters:
+
+```typescript
+filter_by: 'category:=Electronics && in_stock:true'
+```
+
+### 4. Monitor Embedding Costs
+
+For OpenAI/external models, monitor API usage to control costs.
+
+## Next Steps
+
+- Combine with [multi-language search](/examples/multi-language) for semantic search across languages
+- Use [overrides](/config/overrides) to boost specific results
+- Implement [analytics rules](/config/analytics) to track semantic search performance
+- Set up [blue/green migrations](/features/migration) for embedding model updates

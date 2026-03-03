@@ -1,0 +1,291 @@
+---
+title: "tsctl apply"
+description: "Apply configuration changes to your Typesense infrastructure"
+---
+
+## Overview
+
+The `apply` command executes the changes needed to make your Typesense infrastructure match your configuration file. It first shows a plan, then (after confirmation) applies all changes.
+
+## Syntax
+
+```bash
+tsctl apply [options]
+```
+
+## Options
+
+<ParamField path="--config" type="string">
+  Path to config file. If not specified, tsctl will search for `tsctl.config.ts`, `tsctl.config.js`, or `tsctl.config.json` in the current directory.
+</ParamField>
+
+<ParamField path="-c" type="string">
+  Short alias for `--config`.
+</ParamField>
+
+<ParamField path="--yes" type="boolean" default="false">
+  Auto-approve changes without prompting for confirmation. Useful for CI/CD pipelines and automation.
+</ParamField>
+
+<ParamField path="-y" type="boolean" default="false">
+  Short alias for `--yes`.
+</ParamField>
+
+<ParamField path="--force-recreate" type="boolean" default="false">
+  Force recreation of collections with incompatible schema changes. This deletes and recreates collections, resulting in data loss. Use with caution.
+</ParamField>
+
+<ParamField path="--env" type="string">
+  Environment to use (loads `.env.<environment>`). Critical for applying changes to the correct Typesense instance.
+</ParamField>
+
+## Behavior
+
+The apply command:
+
+1. **Loads configuration** - Parses your config file
+2. **Builds execution plan** - Computes what needs to change
+3. **Displays the plan** - Shows all changes with color coding
+4. **Prompts for confirmation** - Asks "Do you want to apply these changes?" (unless `--yes` is used)
+5. **Executes changes** - Creates, updates, and deletes resources in the correct order
+6. **Updates state** - Saves the new state to Typesense
+7. **Reports results** - Shows success/failure for each operation
+
+## Examples
+
+### Interactive apply
+
+```bash
+tsctl apply
+```
+
+**Output:**
+```
+✓ Config loaded
+✓ Plan built
+
+Plan: 2 to add, 0 to change, 0 to destroy
+
+Changes:
+
+  + collection.products
+      7 fields, default_sorting_field: created_at
+
+  + alias.products_live
+      → products
+
+Do you want to apply these changes? (yes/no): yes
+
+Applying changes...
+
+✓ Created collection 'products'
+✓ Created alias 'products_live'
+
+✓ Apply complete! Resources: 2 added, 0 changed, 0 destroyed
+```
+
+### Auto-approve (for automation)
+
+```bash
+tsctl apply --yes
+```
+
+**Output:**
+```
+✓ Config loaded
+✓ Plan built
+
+Plan: 2 to add, 0 to change, 0 to destroy
+
+Changes:
+
+  + collection.products
+  + alias.products_live
+
+Applying changes...
+
+✓ Created collection 'products'
+✓ Created alias 'products_live'
+
+✓ Apply complete! Resources: 2 added, 0 changed, 0 destroyed
+```
+
+### Apply to production
+
+```bash
+tsctl apply --env production
+```
+
+**Output:**
+```
+Using environment: production
+✓ Config loaded
+✓ Plan built
+
+Plan: 0 to add, 1 to change, 0 to destroy
+
+Changes:
+
+  ~ collection.users
+      + field: last_login (int64, optional)
+
+Do you want to apply these changes? (yes/no): yes
+
+Applying changes...
+
+✓ Updated collection 'users'
+
+✓ Apply complete! Resources: 0 added, 1 changed, 0 destroyed
+```
+
+### Force recreate incompatible changes
+
+```bash
+tsctl apply --force-recreate
+```
+
+**Use case:** When you change a field type or other incompatible schema properties that require collection recreation.
+
+**Output:**
+```
+✓ Config loaded
+✓ Plan built
+
+Plan: 0 to add, 1 to change, 0 to destroy
+
+Changes:
+
+  ~ collection.products
+      ! Incompatible change: field 'price' type changed (int32 → float)
+      ⚠  This requires recreation (data will be lost)
+
+Do you want to apply these changes? (yes/no): yes
+
+Applying changes...
+
+⚠  Dropping collection 'products'
+✓ Recreated collection 'products'
+
+✓ Apply complete! Resources: 0 added, 1 changed, 0 destroyed
+```
+
+### No changes scenario
+
+```bash
+tsctl apply
+```
+
+**Output:**
+```
+✓ Config loaded
+✓ Plan built
+
+No changes. Infrastructure matches your configuration.
+```
+
+## Change Order
+
+tsctl applies changes in the correct dependency order:
+
+1. **Deletions** (in reverse dependency order):
+   - API Keys
+   - Overrides
+   - Synonyms
+   - Aliases
+   - Collections
+
+2. **Creates & Updates**:
+   - Collections
+   - Aliases
+   - Synonyms
+   - Overrides
+   - API Keys
+
+## Use Cases
+
+<AccordionGroup>
+  <Accordion title="Development workflow">
+    Iterate on your schema during development:
+    
+    ```bash
+    # Edit tsctl.config.ts
+    tsctl plan              # Review changes
+    tsctl apply             # Apply changes
+    # Test your application
+    ```
+  </Accordion>
+
+  <Accordion title="Production deployment">
+    Safely deploy to production with review:
+    
+    ```bash
+    tsctl plan --env production
+    # Carefully review the plan
+    tsctl apply --env production
+    # Confirm each change
+    ```
+  </Accordion>
+
+  <Accordion title="CI/CD automation">
+    Automate deployments in pipelines:
+    
+    ```bash
+    # .github/workflows/deploy.yml
+    tsctl validate --env staging
+    tsctl plan --env staging
+    tsctl apply --env staging --yes
+    ```
+  </Accordion>
+
+  <Accordion title="Schema migrations">
+    Apply breaking changes with --force-recreate:
+    
+    ```bash
+    # Back up data first!
+    tsctl apply --force-recreate
+    # Re-index data after recreation
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Error Handling
+
+If any operation fails, tsctl:
+- Stops execution immediately
+- Reports the error with details
+- Exits with code 1
+- Leaves partial state (completed operations remain)
+
+**Example error:**
+```
+Applying changes...
+
+✓ Created collection 'products'
+✗ Failed to create alias 'products_live': Collection not found
+
+Error: Apply failed
+```
+
+You can re-run `apply` to continue from where it failed.
+
+## Safety Features
+
+<Warning>
+  - `apply` always shows the plan before making changes
+  - Requires confirmation unless `--yes` is used
+  - Incompatible changes are clearly marked
+  - Collection recreation requires `--force-recreate`
+</Warning>
+
+## Exit Codes
+
+- `0` - Success (all changes applied)
+- `1` - Error (connection failed, operation failed, user cancelled)
+
+## Next Steps
+
+After applying changes:
+
+1. Verify resources with [`tsctl state list`](/commands/state)
+2. Check for drift with [`tsctl drift`](/commands/drift)
+3. Test your application against the updated schema

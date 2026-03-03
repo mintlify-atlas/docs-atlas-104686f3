@@ -1,0 +1,341 @@
+---
+title: "tsctl drift"
+description: "Detect changes made outside of tsctl (drift detection)"
+---
+
+## Overview
+
+The `drift` command detects when resources have been modified directly in Typesense outside of tsctl. This helps identify configuration drift between your declared state and actual infrastructure.
+
+## Syntax
+
+```bash
+tsctl drift [options]
+```
+
+## Options
+
+<ParamField path="--json" type="boolean" default="false">
+  Output the drift report as JSON instead of formatted text. Useful for parsing in scripts and CI/CD pipelines.
+</ParamField>
+
+<ParamField path="--env" type="string">
+  Environment to use (loads `.env.<environment>`). Determines which Typesense instance to check for drift.
+</ParamField>
+
+## Behavior
+
+The drift command:
+
+1. **Connects to Typesense** - Uses credentials from your environment
+2. **Loads state** - Retrieves the last known state from Typesense
+3. **Fetches current resources** - Gets the actual current state of all managed resources
+4. **Compares checksums** - Identifies resources that have changed
+5. **Generates report** - Shows what drifted and how
+6. **Exits with code 1 if drift detected** - Useful for CI/CD alerting
+
+## Examples
+
+### No drift detected
+
+```bash
+tsctl drift
+```
+
+**Output:**
+```
+✓ Drift detection complete
+
+✓ No drift detected
+
+All managed resources match their expected state.
+```
+
+**Exit code:** 0
+
+### Drift detected
+
+```bash
+tsctl drift
+```
+
+**Output:**
+```
+✓ Drift detection complete
+
+⚠️  Drift Detected
+
+The following resources have been modified outside of tsctl:
+
+  ~ collection.products
+      Field 'description' changed: optional: false → true
+      Field 'tags' added
+
+  ~ alias.products_live
+      Collection changed: products → products_v2
+
+  + collection.unmanaged_collection
+      This resource exists but is not in state
+
+  - collection.old_products
+      This resource is in state but no longer exists
+
+Summary:
+  Modified: 2
+  Added: 1
+  Deleted: 1
+```
+
+**Exit code:** 1
+
+### JSON output
+
+```bash
+tsctl drift --json
+```
+
+**Output:**
+```json
+{
+  "hasDrift": true,
+  "modified": [
+    {
+      "type": "collection",
+      "name": "products",
+      "changes": [
+        "Field 'description' changed: optional: false → true",
+        "Field 'tags' added"
+      ]
+    },
+    {
+      "type": "alias",
+      "name": "products_live",
+      "changes": [
+        "Collection changed: products → products_v2"
+      ]
+    }
+  ],
+  "added": [
+    {
+      "type": "collection",
+      "name": "unmanaged_collection"
+    }
+  ],
+  "deleted": [
+    {
+      "type": "collection",
+      "name": "old_products"
+    }
+  ],
+  "timestamp": "2026-03-03T10:30:00.000Z"
+}
+```
+
+**Exit code:** 1
+
+### Check specific environment
+
+```bash
+tsctl drift --env production
+```
+
+## Understanding Drift
+
+### Types of Drift
+
+<AccordionGroup>
+  <Accordion title="Modified Resources">
+    Resources that exist in both state and Typesense but have different configurations:
+    
+    ```
+    ~ collection.products
+        Field 'price' type changed: int32 → float
+        Field 'description' optional changed: false → true
+    ```
+    
+    **Common causes:**
+    - Manual changes via Typesense dashboard
+    - Direct API calls outside tsctl
+    - Schema updates from other tools
+  </Accordion>
+
+  <Accordion title="Added Resources">
+    Resources that exist in Typesense but are not tracked in state:
+    
+    ```
+    + collection.new_collection
+        This resource exists but is not in state
+    ```
+    
+    **Common causes:**
+    - Collections created manually
+    - Resources from other applications
+    - Orphaned resources from failed operations
+  </Accordion>
+
+  <Accordion title="Deleted Resources">
+    Resources that are tracked in state but no longer exist in Typesense:
+    
+    ```
+    - collection.old_data
+        This resource is in state but no longer exists
+    ```
+    
+    **Common causes:**
+    - Manual deletion via dashboard or API
+    - Resources deleted by other tools
+    - Collection cleanup operations
+  </Accordion>
+</AccordionGroup>
+
+## Use Cases
+
+<AccordionGroup>
+  <Accordion title="CI/CD drift detection">
+    Add drift checks to your pipeline to alert on unexpected changes:
+    
+    ```yaml
+    # .github/workflows/drift-check.yml
+    name: Drift Detection
+    
+    on:
+      schedule:
+        - cron: '0 */6 * * *'  # Every 6 hours
+    
+    jobs:
+      check-drift:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v3
+          - name: Check for drift
+            run: |
+              tsctl drift --env production --json > drift-report.json
+              # Upload report or send alert if drift detected
+    ```
+  </Accordion>
+
+  <Accordion title="Compliance auditing">
+    Regularly check that production matches your declared configuration:
+    
+    ```bash
+    # Daily compliance check
+    tsctl drift --env production --json > compliance-$(date +%Y%m%d).json
+    ```
+  </Accordion>
+
+  <Accordion title="Debugging discrepancies">
+    Investigate why your application behavior doesn't match expectations:
+    
+    ```bash
+    tsctl drift --env staging
+    # Check if someone manually modified the schema
+    ```
+  </Accordion>
+
+  <Accordion title="Pre-deployment validation">
+    Ensure no manual changes will be overwritten:
+    
+    ```bash
+    # Before deploying
+    tsctl drift --env production
+    # If drift detected, investigate before applying
+    tsctl plan --env production
+    tsctl apply --env production
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Resolving Drift
+
+When drift is detected, you have two options:
+
+### Option 1: Update Config to Match Reality
+
+If the manual changes are desired:
+
+```bash
+# Import current state
+tsctl import --out current.config.ts
+
+# Review changes
+diff tsctl.config.ts current.config.ts
+
+# Merge desired changes into your config
+# Then apply to update state
+tsctl apply
+```
+
+### Option 2: Revert to Declared Config
+
+If the manual changes are unwanted:
+
+```bash
+# Your config is the source of truth
+tsctl apply
+# This will revert manual changes
+```
+
+## Exit Codes
+
+The drift command uses exit codes for automation:
+
+- `0` - No drift detected
+- `1` - Drift detected OR error occurred
+
+This allows CI/CD pipelines to fail on drift:
+
+```bash
+#!/bin/bash
+if ! tsctl drift --env production; then
+  echo "Drift detected in production!"
+  # Send alert
+  exit 1
+fi
+```
+
+## JSON Output Schema
+
+```typescript
+interface DriftReport {
+  hasDrift: boolean;
+  modified: Array<{
+    type: string;
+    name: string;
+    changes: string[];
+  }>;
+  added: Array<{
+    type: string;
+    name: string;
+  }>;
+  deleted: Array<{
+    type: string;
+    name: string;
+  }>;
+  timestamp: string;
+}
+```
+
+## Drift vs Plan
+
+| Command | Compares | Purpose |
+|---------|----------|----------|
+| `drift` | State vs Current | Detect unauthorized changes |
+| `plan` | Config vs Current | Preview intended changes |
+
+- Use **drift** to find unexpected changes
+- Use **plan** to preview deliberate updates
+
+## Limitations
+
+<Note>
+  Drift detection only checks resources tracked in state. Unmanaged resources (not created by tsctl) won't show as drift unless they conflict with managed resource names.
+</Note>
+
+## Next Steps
+
+After detecting drift:
+
+1. **Investigate the changes** - Determine why drift occurred
+2. **Choose resolution strategy** - Update config or revert changes
+3. **Apply corrections** - Use [`tsctl apply`](/commands/apply) to reconcile
+4. **Prevent future drift** - Implement policies and access controls

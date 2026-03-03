@@ -1,0 +1,616 @@
+---
+title: "CI/CD Integration"
+description: "Automate Typesense infrastructure management in CI/CD pipelines"
+---
+
+## Overview
+
+tsctl is designed for CI/CD automation with:
+- **Exit codes** for pipeline control
+- **JSON output** for parsing
+- **Auto-approve** flags for non-interactive execution
+- **Environment flags** for multi-environment deployments
+- **Drift detection** for monitoring
+
+## Common CI/CD Patterns
+
+### Pattern 1: Automated Deployments
+
+Deploy infrastructure changes on merge to main:
+
+**GitHub Actions**
+```yaml
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'tsctl.config.ts'
+      - '.env.production'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+      
+      - name: Install tsctl
+        run: bun install -g tsctl
+      
+      - name: Validate Config
+        run: tsctl validate -c tsctl.config.ts
+      
+      - name: Deploy to Production
+        env:
+          TYPESENSE_HOST: ${{ secrets.PROD_TYPESENSE_HOST }}
+          TYPESENSE_PORT: ${{ secrets.PROD_TYPESENSE_PORT }}
+          TYPESENSE_PROTOCOL: ${{ secrets.PROD_TYPESENSE_PROTOCOL }}
+          TYPESENSE_API_KEY: ${{ secrets.PROD_TYPESENSE_API_KEY }}
+        run: |
+          tsctl plan
+          tsctl apply -y
+```
+
+### Pattern 2: Manual Approval
+
+Require manual approval before production deployment:
+
+**GitHub Actions with Environment**
+```yaml
+name: Deploy with Approval
+
+on:
+  workflow_dispatch:
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+      
+      - name: Install tsctl
+        run: bun install -g tsctl
+      
+      - name: Generate Plan
+        env:
+          TYPESENSE_HOST: ${{ secrets.PROD_TYPESENSE_HOST }}
+          TYPESENSE_API_KEY: ${{ secrets.PROD_TYPESENSE_API_KEY }}
+        run: |
+          tsctl plan -o plan.json
+      
+      - name: Upload Plan
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-plan
+          path: plan.json
+  
+  deploy:
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: production  # Requires manual approval
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+      
+      - name: Install tsctl
+        run: bun install -g tsctl
+      
+      - name: Apply Changes
+        env:
+          TYPESENSE_HOST: ${{ secrets.PROD_TYPESENSE_HOST }}
+          TYPESENSE_API_KEY: ${{ secrets.PROD_TYPESENSE_API_KEY }}
+        run: tsctl apply -y
+```
+
+### Pattern 3: Drift Detection Monitoring
+
+Continuously monitor for configuration drift:
+
+**GitHub Actions (Scheduled)**
+```yaml
+name: Drift Detection
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  detect-drift:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [staging, production]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+      
+      - name: Install tsctl
+        run: bun install -g tsctl
+      
+      - name: Check Drift - ${{ matrix.environment }}
+        env:
+          TYPESENSE_HOST: ${{ secrets[format('{0}_TYPESENSE_HOST', matrix.environment)] }}
+          TYPESENSE_API_KEY: ${{ secrets[format('{0}_TYPESENSE_API_KEY', matrix.environment)] }}
+        run: |
+          if ! tsctl drift --json > drift-${{ matrix.environment }}.json; then
+            echo "❌ Drift detected in ${{ matrix.environment }}!"
+            cat drift-${{ matrix.environment }}.json
+            exit 1
+          fi
+          echo "✅ No drift in ${{ matrix.environment }}"
+      
+      - name: Upload Drift Report
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: drift-report-${{ matrix.environment }}
+          path: drift-${{ matrix.environment }}.json
+      
+      - name: Notify on Drift
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              text: "⚠️ Drift detected in ${{ matrix.environment }} Typesense",
+              attachments: [{
+                color: 'warning',
+                text: 'Check workflow artifacts for details'
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+```
+
+### Pattern 4: Multi-Environment Pipeline
+
+Deploy progressively through environments:
+
+**GitLab CI**
+```yaml
+stages:
+  - validate
+  - deploy-dev
+  - deploy-staging
+  - deploy-production
+
+variables:
+  TSCTL_VERSION: "0.1.4"
+
+.install_tsctl: &install_tsctl
+  - curl -fsSL https://bun.sh/install | bash
+  - export PATH="$HOME/.bun/bin:$PATH"
+  - bun install -g tsctl@${TSCTL_VERSION}
+
+validate:
+  stage: validate
+  image: oven/bun:latest
+  script:
+    - *install_tsctl
+    - tsctl validate -c tsctl.config.ts
+  only:
+    - merge_requests
+    - main
+
+deploy:dev:
+  stage: deploy-dev
+  image: oven/bun:latest
+  script:
+    - *install_tsctl
+    - tsctl apply --env development -y
+  environment:
+    name: development
+  only:
+    - main
+
+deploy:staging:
+  stage: deploy-staging
+  image: oven/bun:latest
+  script:
+    - *install_tsctl
+    - tsctl plan --env staging
+    - tsctl apply --env staging -y
+  environment:
+    name: staging
+  needs:
+    - deploy:dev
+  only:
+    - main
+
+deploy:production:
+  stage: deploy-production
+  image: oven/bun:latest
+  script:
+    - *install_tsctl
+    - tsctl plan --env production
+    - tsctl apply --env production -y
+  environment:
+    name: production
+  needs:
+    - deploy:staging
+  when: manual  # Require manual trigger
+  only:
+    - main
+```
+
+## Environment-Specific Deployments
+
+### Using Environment Variables
+
+Set environment-specific secrets in your CI/CD platform:
+
+**GitHub Secrets**
+```
+DEV_TYPESENSE_HOST=dev.typesense.example.com
+DEV_TYPESENSE_API_KEY=dev-key-here
+
+STAGING_TYPESENSE_HOST=staging.typesense.example.com
+STAGING_TYPESENSE_API_KEY=staging-key-here
+
+PROD_TYPESENSE_HOST=prod.typesense.example.com
+PROD_TYPESENSE_API_KEY=prod-key-here
+```
+
+**Workflow Usage**
+```yaml
+- name: Deploy to Staging
+  env:
+    TYPESENSE_HOST: ${{ secrets.STAGING_TYPESENSE_HOST }}
+    TYPESENSE_PORT: 443
+    TYPESENSE_PROTOCOL: https
+    TYPESENSE_API_KEY: ${{ secrets.STAGING_TYPESENSE_API_KEY }}
+  run: tsctl apply -y
+```
+
+### Using .env Files
+
+Commit environment templates, inject secrets at runtime:
+
+**`.env.production.template`**
+```env
+TYPESENSE_HOST=${PROD_HOST}
+TYPESENSE_PORT=443
+TYPESENSE_PROTOCOL=https
+TYPESENSE_API_KEY=${PROD_API_KEY}
+```
+
+**Workflow**
+```yaml
+- name: Generate Production .env
+  run: |
+    envsubst < .env.production.template > .env.production
+  env:
+    PROD_HOST: ${{ secrets.PROD_TYPESENSE_HOST }}
+    PROD_API_KEY: ${{ secrets.PROD_TYPESENSE_API_KEY }}
+
+- name: Deploy
+  run: tsctl apply --env production -y
+```
+
+## Automation Best Practices
+
+### 1. Always Validate First
+
+```yaml
+- name: Validate Config
+  run: tsctl validate -c tsctl.config.ts
+
+- name: Deploy
+  run: tsctl apply -y
+```
+
+### 2. Use Exit Codes
+
+tsctl commands return meaningful exit codes:
+
+- **0** - Success
+- **1** - Failure or drift detected
+
+```bash
+# Fail pipeline if drift detected
+if ! tsctl drift; then
+  echo "Drift detected - failing pipeline"
+  exit 1
+fi
+```
+
+### 3. Save Plans as Artifacts
+
+Store plans for audit trail:
+
+```yaml
+- name: Generate Plan
+  run: tsctl plan -o plan.json
+
+- name: Upload Plan
+  uses: actions/upload-artifact@v3
+  with:
+    name: deployment-plan-${{ github.run_id }}
+    path: plan.json
+    retention-days: 90
+```
+
+### 4. Use --json for Parsing
+
+Parse JSON output programmatically:
+
+```bash
+#!/bin/bash
+
+# Get drift report as JSON
+tsctl drift --json > drift.json
+
+# Parse with jq
+MODIFIED=$(jq '.summary.modified' drift.json)
+DELETED=$(jq '.summary.deleted' drift.json)
+UNMANAGED=$(jq '.summary.unmanaged' drift.json)
+
+if [ "$MODIFIED" -gt 0 ] || [ "$DELETED" -gt 0 ]; then
+  echo "Critical drift detected!"
+  # Send alert
+  curl -X POST $ALERT_WEBHOOK -d @drift.json
+  exit 1
+fi
+```
+
+### 5. Implement Rollback
+
+Always have a rollback strategy:
+
+```yaml
+- name: Deploy
+  id: deploy
+  run: tsctl apply -y
+  continue-on-error: true
+
+- name: Verify Deployment
+  id: verify
+  run: |
+    # Your verification logic
+    ./scripts/verify-typesense.sh
+
+- name: Rollback on Failure
+  if: steps.deploy.outcome == 'failure' || steps.verify.outcome == 'failure'
+  run: |
+    echo "Deployment failed, rolling back..."
+    git checkout HEAD~1 -- tsctl.config.ts
+    tsctl apply -y
+```
+
+### 6. Tag Deployments
+
+```yaml
+- name: Tag Successful Deployment
+  if: success()
+  run: |
+    git tag "deploy-prod-$(date +%Y%m%d-%H%M%S)"
+    git push origin --tags
+```
+
+## Blue/Green Migrations in CI/CD
+
+Automate zero-downtime migrations:
+
+```yaml
+name: Blue/Green Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      alias:
+        description: 'Alias to migrate'
+        required: true
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+      
+      - name: Install tsctl
+        run: bun install -g tsctl
+      
+      - name: Create New Collection
+        env:
+          TYPESENSE_HOST: ${{ secrets[format('{0}_TYPESENSE_HOST', github.event.inputs.environment)] }}
+          TYPESENSE_API_KEY: ${{ secrets[format('{0}_TYPESENSE_API_KEY', github.event.inputs.environment)] }}
+        run: |
+          tsctl migrate \
+            -a ${{ github.event.inputs.alias }} \
+            -c tsctl.config.ts \
+            --env ${{ github.event.inputs.environment }} \
+            --create-only \
+            -y
+      
+      - name: Get New Collection Name
+        id: collection
+        run: |
+          # Extract new collection name from state
+          NEW_COLLECTION=$(tsctl state list --env ${{ github.event.inputs.environment }} | grep "${{ github.event.inputs.alias }}" | awk '{print $2}')
+          echo "collection=$NEW_COLLECTION" >> $GITHUB_OUTPUT
+      
+      - name: Reindex Data
+        run: |
+          # Your reindexing logic
+          bun run scripts/reindex.ts \
+            --collection ${{ steps.collection.outputs.collection }} \
+            --env ${{ github.event.inputs.environment }}
+      
+      - name: Verify Indexing
+        run: |
+          # Verify document count matches
+          ./scripts/verify-collection.sh ${{ steps.collection.outputs.collection }}
+      
+      - name: Switch Alias
+        env:
+          TYPESENSE_HOST: ${{ secrets[format('{0}_TYPESENSE_HOST', github.event.inputs.environment)] }}
+          TYPESENSE_API_KEY: ${{ secrets[format('{0}_TYPESENSE_API_KEY', github.event.inputs.environment)] }}
+        run: |
+          tsctl migrate \
+            -a ${{ github.event.inputs.alias }} \
+            -c tsctl.config.ts \
+            --env ${{ github.event.inputs.environment }} \
+            --switch-only \
+            --skip-delete \
+            -y
+      
+      - name: Monitor for Issues
+        run: |
+          # Monitor for 5 minutes
+          sleep 300
+          ./scripts/check-error-rate.sh
+      
+      - name: Cleanup Old Collection
+        if: success()
+        run: |
+          # Wait 24 hours before cleanup in production
+          if [ "${{ github.event.inputs.environment }}" == "production" ]; then
+            echo "Manual cleanup required for production"
+          else
+            OLD_COLLECTION=$(tsctl state list | grep -B1 "${{ steps.collection.outputs.collection }}" | head -1)
+            tsctl migrate -a ${{ github.event.inputs.alias }} --cleanup $OLD_COLLECTION -y
+          fi
+```
+
+## Monitoring and Alerts
+
+### Slack Notifications
+
+```yaml
+- name: Notify Success
+  if: success()
+  uses: 8398a7/action-slack@v3
+  with:
+    status: success
+    text: |
+      ✅ Typesense deployment to ${{ github.event.inputs.environment }} succeeded
+      Changes: ${{ env.CHANGES_SUMMARY }}
+    fields: repo,commit,author,action
+  env:
+    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+- name: Notify Failure
+  if: failure()
+  uses: 8398a7/action-slack@v3
+  with:
+    status: failure
+    text: |
+      ❌ Typesense deployment to ${{ github.event.inputs.environment }} failed
+      Check workflow logs for details
+  env:
+    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+```
+
+### PagerDuty Integration
+
+```yaml
+- name: Trigger PagerDuty Alert
+  if: failure()
+  run: |
+    curl -X POST https://events.pagerduty.com/v2/enqueue \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "routing_key": "${{ secrets.PAGERDUTY_KEY }}",
+        "event_action": "trigger",
+        "payload": {
+          "summary": "Typesense deployment failed",
+          "severity": "error",
+          "source": "GitHub Actions"
+        }
+      }'
+```
+
+## Security Best Practices
+
+### 1. Use Secrets, Never Hardcode
+
+```yaml
+# ❌ Bad
+- name: Deploy
+  run: tsctl apply -y
+  env:
+    TYPESENSE_API_KEY: xyz123
+
+# ✅ Good
+- name: Deploy
+  run: tsctl apply -y
+  env:
+    TYPESENSE_API_KEY: ${{ secrets.TYPESENSE_API_KEY }}
+```
+
+### 2. Restrict Production Access
+
+Use GitHub Environments with required reviewers:
+
+```yaml
+environment:
+  name: production
+  # Requires approval from @ops-team
+```
+
+### 3. Use Least-Privilege API Keys
+
+Create CI-specific API keys with minimal permissions:
+
+```typescript
+// CI-only key in tsctl.config.ts
+{
+  description: "CI/CD deployment key",
+  actions: [
+    "collections:create",
+    "collections:update",
+    "collections:delete",
+    "aliases:create",
+    "aliases:update",
+  ],
+  collections: ["*"],
+}
+```
+
+### 4. Audit Logs
+
+Store deployment logs for compliance:
+
+```yaml
+- name: Upload Deployment Logs
+  if: always()
+  uses: actions/upload-artifact@v3
+  with:
+    name: deployment-logs-${{ github.run_id }}
+    path: |
+      plan.json
+      deploy.log
+    retention-days: 365  # Keep for 1 year
+```
+
+## Related Documentation
+
+- [Multi-Environment Support](/advanced/multi-environment) - Environment configuration
+- [Drift Detection](/advanced/drift-detection) - Monitoring configuration drift
+- [Blue/Green Migrations](/advanced/blue-green-migrations) - Zero-downtime migrations
+- [Commands Reference](/commands) - All tsctl commands
