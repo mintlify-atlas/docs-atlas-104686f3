@@ -1,0 +1,107 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "tsctl",
+  "projectDescription": "Terraform-like CLI for managing Typesense collections, aliases, synonyms, and curations",
+  "theme": "aspen",
+  "primaryColor": "#00A67E",
+  "lightColor": "#00D99A",
+  "darkColor": "#008766",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get Started",
+        "pages": [
+          "introduction",
+          "installation",
+          "quickstart"
+        ]
+      },
+      {
+        "group": "Core Concepts",
+        "pages": [
+          "concepts/configuration",
+          "concepts/state-management",
+          "concepts/plan-apply-workflow"
+        ]
+      },
+      {
+        "group": "Commands",
+        "pages": [
+          "commands/init",
+          "commands/validate",
+          "commands/plan",
+          "commands/apply",
+          "commands/destroy",
+          "commands/import",
+          "commands/drift",
+          "commands/migrate",
+          "commands/state",
+          "commands/env"
+        ]
+      },
+      {
+        "group": "Configuration Reference",
+        "pages": [
+          "config/overview",
+          "config/collections",
+          "config/fields",
+          "config/aliases",
+          "config/synonyms",
+          "config/overrides",
+          "config/analytics-rules",
+          "config/api-keys"
+        ]
+      },
+      {
+        "group": "Advanced",
+        "pages": [
+          "advanced/multi-environment",
+          "advanced/drift-detection",
+          "advanced/blue-green-migrations",
+          "advanced/ci-cd-integration"
+        ]
+      },
+      {
+        "group": "Examples",
+        "pages": [
+          "examples/basic-setup",
+          "examples/e-commerce",
+          "examples/multi-language",
+          "examples/vector-search"
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Declarative infrastructure-as-code for Typesense",
+    "Plan/Apply workflow with change preview",
+    "State management stored in Typesense",
+    "Multi-environment support",
+    "Drift detection",
+    "Blue/green migrations for zero-downtime updates",
+    "Import existing resources",
+    "Type-safe TypeScript configuration"
+  ],
+  "publicApiSurface": [
+    "tsctl init",
+    "tsctl validate",
+    "tsctl plan",
+    "tsctl apply",
+    "tsctl destroy",
+    "tsctl import",
+    "tsctl drift",
+    "tsctl migrate",
+    "tsctl state list",
+    "tsctl state show",
+    "tsctl state clear",
+    "tsctl env list",
+    "tsctl env show",
+    "defineConfig()",
+    "TypesenseConfig",
+    "CollectionConfig",
+    "AliasConfig",
+    "SynonymConfig",
+    "OverrideConfig",
+    "ApiKeyConfig"
+  ]
+}
